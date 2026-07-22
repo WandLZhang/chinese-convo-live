@@ -337,6 +337,7 @@ body {
   font-family: var(--font-cjk);
   font-size: 14px;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 .lang-toggle button.active {
   background: var(--accent);
@@ -614,6 +615,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 .icon-btn.ghost {
   background: transparent;

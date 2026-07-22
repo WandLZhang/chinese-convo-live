@@ -57,14 +57,16 @@ function Chat() {
             <button
               className={language === 'mandarin' ? 'active' : ''}
               onClick={() => setLanguage('mandarin')}
+              aria-label="普通话 (Mandarin)"
             >
-              普通话
+              普
             </button>
             <button
               className={language === 'cantonese' ? 'active' : ''}
               onClick={() => setLanguage('cantonese')}
+              aria-label="廣東話 (Cantonese)"
             >
-              廣東話
+              粵
             </button>
           </div>
           <OverflowMenu
