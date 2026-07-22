@@ -1,0 +1,5 @@
+anthropic[vertex]
+google-cloud-aiplatform==1.69.0
+google-genai
+google-cloud-firestore==2.15.0
+opencc-python-reimplemented==0.1.7

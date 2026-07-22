@@ -1,0 +1,45 @@
+# deps / build
+node_modules
+frontend/dist
+dist
+dist-ssr
+*.local
+
+# logs
+logs
+*.log
+firebase-debug.log*
+firebase-debug.*.log*
+.firebase/
+
+# secrets / config (web config gitignored per project convention)
+frontend/src/services/firebase.config.ts
+frontend/.env
+frontend/.env.local
+# per-user Firebase project alias (run `firebase use YOUR_PROJECT`)
+.firebaserc
+# local, project-specific function env
+functions/**/.env.yaml
+
+# python
+**/__pycache__/
+*.pyc
+.venv/
+*/.venv/
+
+# bench + signal outputs
+bench/results/
+local/signal_reader/state/
+
+# audit outputs embed the owner's personal vocabulary list — never publish
+audit/*.jsonl
+
+# typescript incremental build info
+*.tsbuildinfo
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.sw?

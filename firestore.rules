@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// Single-owner lockdown: only the owner's authenticated identity can read or
+// write ANY document. Personal data (context_entries, personal_context) and the
+// vocabulary are all gated behind this. The local ingestion job writes via the
+// Admin SDK (service account), which bypasses these rules by design.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email == 'owner@example.com'  // <-- replace with your owner email (match appConfig.ownerEmail)
+        && request.auth.token.email_verified == true;
+    }
+
+    match /vocabulary/{doc} {
+      allow read, write: if isOwner();
+    }
+    match /context_entries/{doc} {
+      allow read, write: if isOwner();
+    }
+    match /personal_context/{doc} {
+      allow read, write: if isOwner();
+    }
+
+    // Everything else: denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
