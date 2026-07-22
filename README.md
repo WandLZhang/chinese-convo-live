@@ -38,8 +38,12 @@ word to use is precomputed, not left to the model at request time**:
    on-the-fly synonym guessing.** The `alt` path validates that the word actually appears (with a
    retry); the direct path mandates it in the prompt.
 
-This matters because even the best model, handed the full dictionary entry, only produces the right
-colloquial word about 55-60% of the time (see `bench/`). Precomputing makes it deterministic.
+Why precompute instead of just handing the model the dictionary at request time and letting it pick
+the colloquial word? Because that approach — which is what `bench/` measures — tops out around
+55-60% even for the best model, too unreliable to ship. Moving the rule to an offline step makes the
+runtime **deterministic**: the app uses the correct word by construction, not by the model's
+judgment. (So that 55-60% describes the *rejected* design, not the shipped app, whose word choice is
+100% by construction.)
 
 ### Models (all benchmark-selected — see `bench/`)
 
