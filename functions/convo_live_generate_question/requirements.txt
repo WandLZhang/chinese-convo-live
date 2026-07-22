@@ -1,5 +1,5 @@
 functions-framework==3.*
 flask==3.0.2
 google-auth==2.*
-requests==2.*
+anthropic[vertex]
 opencc-python-reimplemented==0.1.7

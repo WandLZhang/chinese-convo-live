@@ -49,13 +49,14 @@ judgment. (So that 55-60% describes the *rejected* design, not the shipped app, 
 
 | Job | Choice | Why |
 |---|---|---|
-| Generation | **Grok 4.1 Fast** (Vertex, `xai/grok-4.1-fast-non-reasoning`) | fastest (p50 ~0.55s), best native Cantonese, streams tokens |
-| Grading | **Grok 4.1 Fast** | 100% agreement with gold labels on the curated set, ~1.1s |
+| Generation | **Claude Sonnet 5** (Vertex, AnthropicVertex, streamed) | most authentic colloquial register — 雪糕 not 冰淇淋, 擔保 used in its real vouch sense; top of an LLM-judge quality panel (4.21/5); TTFT ~0.6-0.8s |
+| Grading | **Grok 4.1 Fast** (Vertex MaaS) | 100% agreement with gold labels on the curated set, ~1.1s (classification is easy — speed wins) |
 | Romanization | **ToJyutping / pypinyin** (libraries) | deterministic and instant — beats the LLM, especially jyutping tones |
 | Text-to-speech | **Cloud TTS Chirp 3 HD** (`yue-HK`, `cmn-CN`) | ~0.6s both languages; replaced Gemini native-audio (4-6s, garbled Cantonese) |
 
 The functions derive their GCP project from Application Default Credentials, so **no project id is
-hardcoded** — deploy them anywhere Grok/Vertex is enabled.
+hardcoded** — deploy them anywhere the models are enabled in Vertex (Claude Sonnet 5 for generation,
+xAI Grok for grading).
 
 ---
 

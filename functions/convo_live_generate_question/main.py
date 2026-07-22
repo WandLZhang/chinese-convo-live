@@ -6,12 +6,14 @@ Design (locked): the colloquial-alternative decision is PRE-COMPUTED into Firest
   - alt present  -> write a natural question using the colloquial word `alt` (meaning anchored
                    by the formal `word`), validated + retried so `alt` actually appears.
   - alt absent   -> write a natural question using `word` directly.
-Output is the raw question text, streamed (Grok tokens) for the direct case; the alt case is
+Output is the raw question text, streamed (Claude tokens) for the direct case; the alt case is
 generated whole (so it can be validated) then emitted. The client already knows word/alt from
 the Firestore doc, so no JSON metadata is returned — just the text.
 
-Model: Grok 4.1 Fast (Non-Reasoning) on Vertex (OpenAI-compatible endpoint) — benchmark-selected
-for lowest latency; it emits traditional Cantonese natively. Swap GEN_MODEL to change.
+Model: Claude Sonnet 5 on Vertex (AnthropicVertex SDK) — benchmark-selected for the most authentic
+colloquial Cantonese/Mandarin (natural word usage + register; e.g. 雪糕 not 冰淇淋, 擔保 in its real
+vouch sense); TTFT ~0.6s streamed. Swap GEN_MODEL to change (a Grok/MaaS model would instead need
+the OpenAI-compatible endpoint path).
 """
 import json
 import logging
@@ -20,31 +22,24 @@ import traceback
 
 import functions_framework
 import google.auth
-import google.auth.transport.requests
 import opencc
-import requests
+from anthropic import AnthropicVertex
 from flask import Response, jsonify, stream_with_context
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Project = the deploy project (from ADC), overridable via PROJECT_ID — no project id is
-# hardcoded. This is where Grok (Vertex OpenAI-compatible endpoint) is billed and served.
-_creds, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+# hardcoded. This is where Claude (Vertex) is billed and served.
+_, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 LLM_PROJECT = os.getenv("PROJECT_ID") or _adc_project
-GEN_MODEL = "xai/grok-4.1-fast-non-reasoning"  # benchmark-selected fastest generation model
-_ENDPOINT = (f"https://aiplatform.googleapis.com/v1/projects/{LLM_PROJECT}"
-             "/locations/global/endpoints/openapi/chat/completions")
+GEN_MODEL = "claude-sonnet-5"  # benchmark-selected: most authentic colloquial Cantonese/Mandarin
+_client = AnthropicVertex(region="global", project_id=LLM_PROJECT)
 
 CORS = {"Access-Control-Allow-Origin": "*"}
 STREAM_HEADERS = {**CORS, "X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 LANG = {"cantonese": "廣東話", "mandarin": "普通話"}
 converter = opencc.OpenCC("s2t")  # simplified -> traditional (Cantonese output must be traditional)
-
-
-def _token():
-    _creds.refresh(google.auth.transport.requests.Request())
-    return _creds.token
 
 
 def build_prompt(word, alt, language, personal_context, conversation_context):
@@ -70,36 +65,19 @@ def build_prompt(word, alt, language, personal_context, conversation_context):
     return prompt, target
 
 
-def _grok(messages, stream, max_tokens):
-    return requests.post(
-        _ENDPOINT, stream=stream, timeout=60,
-        headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"},
-        json={"model": GEN_MODEL, "temperature": 0.7, "max_tokens": max_tokens,
-              "messages": messages, "stream": stream})
+def _claude_full(system, nudge, max_tokens):
+    """Whole (non-streamed) generation — used by the alt path so the output can be validated."""
+    msg = _client.messages.create(model=GEN_MODEL, max_tokens=max_tokens, system=system,
+                                  messages=[{"role": "user", "content": nudge}])
+    return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text").strip()
 
 
-def _full_text(resp):
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"].strip()
-
-
-def _iter_deltas(resp):
-    resp.raise_for_status()
-    for raw in resp.iter_lines():
-        if not raw:
-            continue
-        line = raw.decode("utf-8")
-        if not line.startswith("data:"):
-            continue
-        data = line[5:].strip()
-        if data == "[DONE]":
-            break
-        try:
-            delta = json.loads(data)["choices"][0]["delta"].get("content")
-        except Exception:  # noqa: BLE001
-            continue
-        if delta:
-            yield delta
+def _claude_stream(system, nudge, max_tokens):
+    """Token stream for the direct path (natural typewriter UX)."""
+    with _client.messages.stream(model=GEN_MODEL, max_tokens=max_tokens, system=system,
+                                 messages=[{"role": "user", "content": nudge}]) as stream:
+        for text in stream.text_stream:
+            yield text
 
 
 @functions_framework.http
@@ -120,7 +98,6 @@ def convo_live_generate_question(request):
         system, target = build_prompt(word, alt, language, personal_context, conversation_context)
         max_tokens = 200
         nudge = "開始。" if language == "cantonese" else "开始。"
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": nudge}]
         logger.info(f"word={word} alt={alt} language={language} target={target} "
                     f"pcLen={len(personal_context)} ccLen={len(conversation_context)}")
         logger.info(f"SYSTEM PROMPT:\n{system}")
@@ -128,8 +105,8 @@ def convo_live_generate_question(request):
         # ALT path: must actually contain `alt` -> generate whole, validate, retry, then emit.
         if alt and language == "cantonese":
             text = ""
-            for attempt in range(2):  # 1 retry max — a word Grok won't produce won't appear on retry either
-                text = _full_text(_grok(messages, stream=False, max_tokens=max_tokens))
+            for attempt in range(2):  # 1 retry max — a word the model won't produce won't appear on retry either
+                text = _claude_full(system, nudge, max_tokens)
                 logger.info(f"alt-gen attempt {attempt}: {text}")
                 if alt in text:
                     break
@@ -146,7 +123,7 @@ def convo_live_generate_question(request):
         def gen_stream():
             collected = []
             try:
-                for delta in _iter_deltas(_grok(messages, stream=True, max_tokens=max_tokens)):
+                for delta in _claude_stream(system, nudge, max_tokens):
                     collected.append(delta)
                     yield delta
             finally:
