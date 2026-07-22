@@ -16,7 +16,7 @@ configured account, so a visitor cannot read any data).
 
 ```
         due/new word ──► generate ──► colloquial sentence + your life + last exchange
-                                         │  (Grok 4.1 Fast, streamed)
+                                         │  (Claude Sonnet 5, streamed)
    you reply ──► grade (Grok) ──► fluent? meaningful? + rewrite + jyutping/pinyin ──► reschedule (SRS)
                                          ▲
    personalization DB (context_entries) ┘  built hourly, server-side, from Calendar/Gmail/Drive/Signal
@@ -65,7 +65,7 @@ xAI Grok for grading).
 ```
 frontend/                         Vite + React + TypeScript chat app (Firebase Hosting)
 functions/
-  convo_live_generate_question/   generate the colloquial sentence (Grok, streamed)
+  convo_live_generate_question/   generate the colloquial sentence (Claude Sonnet 5, streamed)
   convo_live_evaluate_answer/     grade the answer + schedule next review (evaluate_answer,
                                     update_review_time — two handlers, one source)
   convo_live_generate_audio/      Cloud TTS Chirp 3 HD -> base64 WAV
@@ -85,7 +85,7 @@ firestore.indexes.json           SRS composite indexes (nextReview{Mandarin,Cant
 
 ### Prerequisites
 - `gcloud` (authenticated), `firebase-tools`, Node 18+, Python 3.12.
-- A GCP project with billing, and access to Grok 4.1 Fast in Vertex Model Garden.
+- A GCP project with billing, and access to Claude Sonnet 5 (generation) + xAI Grok 4.1 Fast (grading) in Vertex Model Garden.
 
 ### 1. OAuth consent + client (console — needed only for personalization)
 Create an OAuth consent screen (External, **Testing** mode; add your account as a test user) with
@@ -150,7 +150,10 @@ PROJECT_ID=your-gcp-project python bench/bench_grading.py  # grading: label agre
 PROJECT_ID=your-gcp-project python bench/bench_tts.py      # TTS: latency + round-trip STT accuracy
 ```
 `bench_colloquial` scores whether a model uses a Words.hk-attested colloquial synonym (objective,
-against the dictionary) — it is what proved the precompute-the-`alt` design and selected Grok.
+against the dictionary) — it is what proved the precompute-the-`alt` design. Generation itself now
+uses **Claude Sonnet 5**, picked by a separate holistic naturalness/register judge panel (recall +
+speed alone under-weighted register — that panel lives in the `language-benchmarks` repo); Grok
+remains the grader.
 
 ## Security model
 

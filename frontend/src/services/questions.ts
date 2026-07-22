@@ -57,7 +57,7 @@ export async function generateQuestion(
     )
   }
 
-  // The function streams plain question text — real Grok tokens for the direct case, or the
+  // The function streams plain question text — real Claude (Sonnet 5) tokens for the direct case, or the
   // whole validated sentence for the alt case. Assemble it, surfacing chunks for a typewriter.
   const reader = response.body.getReader()
   const decoder = new TextDecoder()

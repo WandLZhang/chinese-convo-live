@@ -43,7 +43,7 @@ gcloud services enable --project "$PROJECT_ID" \
 
 echo "== [2/8] IAM for the runtime/build service account =="
 # This org disables auto-grants, so grant explicitly. Functions run as the compute SA:
-# it builds (cloudbuild), calls Vertex/Grok+TTS (aiplatform), and reads/writes Firestore.
+# it builds (cloudbuild), calls Vertex models — Claude + Grok + TTS (aiplatform), and reads/writes Firestore.
 for role in roles/cloudbuild.builds.builder roles/aiplatform.user roles/datastore.user; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:${COMPUTE_SA}" --role="$role" --condition=None >/dev/null
