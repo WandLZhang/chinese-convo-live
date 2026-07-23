@@ -8,6 +8,7 @@ Uses the VM's attached SA (convo-live-signal: datastore.user + aiplatform.user).
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 
 import google.auth
@@ -15,11 +16,14 @@ import google.auth.transport.requests
 import requests
 from google.cloud import firestore
 
-PROJECT = os.getenv("PROJECT_ID", "your-gcp-project")
+# cron runs with a bare PATH (/usr/bin:/bin) that omits /usr/local/bin, so resolve signal-cli's
+# absolute path here — a bare "signal-cli" raised FileNotFoundError on every cron run.
+SIGNAL_CLI = shutil.which("signal-cli") or "/usr/local/bin/signal-cli"
+_creds, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+PROJECT = os.getenv("PROJECT_ID") or _adc_project or "your-gcp-project"  # on the VM: derived from ADC
 GROK_URL = (f"https://aiplatform.googleapis.com/v1/projects/{PROJECT}"
             "/locations/global/endpoints/openapi/chat/completions")
 db = firestore.Client(project=PROJECT)
-_creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 
 DISTILL_SYS = (
     "You turn a raw personal chat message into ONE short, natural, conversation-worthy fact about "
@@ -76,7 +80,7 @@ def upsert(source_ref, text):
 
 
 def _account():
-    out = subprocess.run(["signal-cli", "listAccounts"], capture_output=True, text=True).stdout
+    out = subprocess.run([SIGNAL_CLI, "listAccounts"], capture_output=True, text=True).stdout
     for tok in out.replace(":", " ").split():
         if tok.startswith("+"):
             return tok
@@ -88,7 +92,7 @@ def main():
     if not acc:
         print("no linked signal account")
         return
-    out = subprocess.run(["signal-cli", "-a", acc, "-o", "json", "receive"],
+    out = subprocess.run([SIGNAL_CLI, "-a", acc, "-o", "json", "receive"],
                          capture_output=True, text=True, timeout=180).stdout
     n = 0
     for line in out.splitlines():
