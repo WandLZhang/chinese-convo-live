@@ -18,8 +18,17 @@ export default function ChatInput({
 }: Props) {
   const [text, setText] = useState('')
   const [listening, setListening] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
   // Web Speech API is untyped in TS libdom without extra defs.
   const recognitionRef = useRef<any>(null)
+  // On a phone/tablet, hand voice input to the on-screen keyboard (Gboard) — its Cantonese/Mandarin
+  // voice typing is far better than the browser Web Speech API. A page can't trigger the keyboard's
+  // mic from JS, so we just summon the keyboard in the right language (input `lang`) and the user
+  // taps Gboard's mic. Coarse pointer = touch-primary device; desktop keeps Web Speech.
+  const isTouch =
+    typeof window !== 'undefined' &&
+    !!window.matchMedia &&
+    window.matchMedia('(pointer: coarse)').matches
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -30,7 +39,12 @@ export default function ChatInput({
     onHadDifficultyChange(false)
   }
 
-  const toggleMic = () => {
+  const handleMic = () => {
+    if (isTouch) {
+      // Summon the keyboard (in the input's `lang`); the user taps Gboard's own mic to voice-type.
+      inputRef.current?.focus()
+      return
+    }
     const SR =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SR) {
@@ -75,6 +89,8 @@ export default function ChatInput({
         <span className="material-symbols-outlined">sentiment_stressed</span>
       </button>
       <input
+        ref={inputRef}
+        lang={language === 'cantonese' ? 'zh-HK' : 'zh-CN'}
         className="chat-input-field chinese-text"
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -84,8 +100,8 @@ export default function ChatInput({
       <button
         type="button"
         className={`icon-btn ${listening ? 'active' : ''}`}
-        onClick={toggleMic}
-        title="Voice input"
+        onClick={handleMic}
+        title={isTouch ? 'Voice input via your keyboard mic' : 'Voice input'}
         aria-label="Voice input"
         disabled={disabled}
       >
