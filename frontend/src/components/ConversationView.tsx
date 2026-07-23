@@ -28,6 +28,26 @@ export default function ConversationView({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [turns])
 
+  // When the on-screen keyboard opens (visual viewport shrinks), anchor the latest AI sentence to
+  // the top so it stays visible above the keyboard instead of scrolling away as the input focuses.
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    let prev = vv.height
+    const onResize = () => {
+      const opened = vv.height < prev - 120
+      prev = vv.height
+      if (!opened) return
+      setTimeout(() => {
+        const lefts = document.querySelectorAll('.chat-container .message-group.left')
+        const last = lefts[lefts.length - 1] as HTMLElement | undefined
+        last?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      }, 60)
+    }
+    vv.addEventListener('resize', onResize)
+    return () => vv.removeEventListener('resize', onResize)
+  }, [])
+
   let lastUserIdx = -1
   turns.forEach((t, i) => {
     if (t.role === 'user') lastUserIdx = i

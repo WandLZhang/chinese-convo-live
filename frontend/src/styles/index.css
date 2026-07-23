@@ -143,6 +143,15 @@ body {
   width: 100%;
   max-width: 768px;
 }
+/* Bottom-anchor the conversation so the latest turn hugs the input (things stay close when you
+   type). margin-top:auto collapses once content overflows, so normal scrolling is preserved. */
+.chat-container > *:first-child {
+  margin-top: auto;
+}
+/* Keyboard-open scroll anchors the latest AI bubble to the top — leave a gap below the app bar. */
+.message-group {
+  scroll-margin-top: 12px;
+}
 
 .chat-divider {
   display: flex;
