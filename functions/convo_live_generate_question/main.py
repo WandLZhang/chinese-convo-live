@@ -26,8 +26,16 @@ import opencc
 from anthropic import AnthropicVertex
 from flask import Response, jsonify, stream_with_context
 
-logging.basicConfig(level=logging.INFO)
+# Force our own INFO handler: importing the anthropic SDK configures root logging, which makes a
+# later logging.basicConfig a no-op and silently suppresses our INFO payload/output logs. An
+# explicit handler guarantees the word/prompt/FINAL lines reach Cloud Logging (stderr).
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setLevel(logging.INFO)
+    logger.addHandler(_handler)
+logger.propagate = False
 
 # Project = the deploy project (from ADC), overridable via PROJECT_ID — no project id is
 # hardcoded. This is where Claude (Vertex) is billed and served.
