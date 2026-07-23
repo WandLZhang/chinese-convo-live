@@ -110,7 +110,16 @@ function DictPopover({
         lookup && (
           <>
             <span className="dict-word chinese-text">{lookup.word}</span>
-            {lookup.roman && <span className="dict-roman">{lookup.roman}</span>}
+            {lookup.reading.length > 0 && (
+              <span className="dict-roman">
+                {lookup.reading.map((seg, i) => (
+                  <span key={i} style={{ color: seg.color }}>
+                    {i > 0 ? ' ' : ''}
+                    {seg.text}
+                  </span>
+                ))}
+              </span>
+            )}
             <span className="dict-def">{lookup.def}</span>
           </>
         )
@@ -162,10 +171,10 @@ function AssistantBubble({
     setLookupLoading(true)
     try {
       const r = await lookupAt(q.question, i, language)
-      setLookup(r ?? { word: q.question[i], roman: '', def: '(no dictionary entry)' })
+      setLookup(r ?? { word: q.question[i], reading: [], def: '(no dictionary entry)' })
     } catch (err) {
       console.error('[dict] lookup failed:', err)
-      setLookup({ word: q.question[i], roman: '', def: '(dictionary unavailable)' })
+      setLookup({ word: q.question[i], reading: [], def: '(dictionary unavailable)' })
     } finally {
       setLookupLoading(false)
     }

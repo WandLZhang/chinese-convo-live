@@ -395,7 +395,7 @@ body {
   margin-top: 8px;
 }
 .bubble-divider {
-  border-top: 1px dashed var(--md-sys-color-outline);
+  border-top: 1px solid var(--md-sys-color-outline);
   opacity: 0.5;
   margin: 0 0 6px;
 }
@@ -439,7 +439,7 @@ body {
 }
 .dict-roman {
   font-size: 13px;
-  color: var(--accent);
+  font-weight: 600;
 }
 .dict-def {
   display: block;
