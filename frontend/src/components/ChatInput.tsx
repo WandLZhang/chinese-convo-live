@@ -4,12 +4,19 @@ import type { Language } from '../types'
 interface Props {
   language: Language
   disabled: boolean
+  hadDifficulty: boolean
+  onHadDifficultyChange: (v: boolean) => void
   onSubmit: (answer: string, hadDifficulty: boolean) => void
 }
 
-export default function ChatInput({ language, disabled, onSubmit }: Props) {
+export default function ChatInput({
+  language,
+  disabled,
+  hadDifficulty,
+  onHadDifficultyChange,
+  onSubmit,
+}: Props) {
   const [text, setText] = useState('')
-  const [hadDifficulty, setHadDifficulty] = useState(false)
   const [listening, setListening] = useState(false)
   // Web Speech API is untyped in TS libdom without extra defs.
   const recognitionRef = useRef<any>(null)
@@ -20,7 +27,7 @@ export default function ChatInput({ language, disabled, onSubmit }: Props) {
     if (!t || disabled) return
     onSubmit(t, hadDifficulty)
     setText('')
-    setHadDifficulty(false)
+    onHadDifficultyChange(false)
   }
 
   const toggleMic = () => {
@@ -60,7 +67,7 @@ export default function ChatInput({ language, disabled, onSubmit }: Props) {
       <button
         type="button"
         className={`icon-btn ${hadDifficulty ? 'active-warn' : ''}`}
-        onClick={() => setHadDifficulty((v) => !v)}
+        onClick={() => onHadDifficultyChange(!hadDifficulty)}
         title="Mark that this one was hard"
         aria-label="Had difficulty"
         disabled={disabled}

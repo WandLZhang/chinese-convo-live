@@ -354,6 +354,103 @@ body {
   padding: 2px 10px;
   border-radius: 999px;
 }
+
+/* Row: vocab chip + reveal icons (eye = translate, paperclip = source context) */
+.assistant-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 999px;
+  line-height: 1;
+}
+.chip-icon .material-symbols-outlined {
+  font-size: 18px;
+}
+.chip-icon.active {
+  color: var(--accent);
+}
+
+/* Tappable characters in the generated sentence (dictionary lookup on tap) */
+.tap-char {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.1s;
+}
+.tap-char:active {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Translation / source-context revealed under a divider inside the bubble */
+.bubble-extra {
+  margin-top: 8px;
+}
+.bubble-divider {
+  border-top: 1px dashed var(--md-sys-color-outline);
+  opacity: 0.5;
+  margin: 0 0 6px;
+}
+.translation-text {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+.context-label {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  opacity: 0.75;
+  margin-bottom: 2px;
+}
+.context-text {
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+/* Dictionary pop-out card (tap to dismiss) */
+.dict-pop {
+  align-self: flex-start;
+  margin-top: 6px;
+  max-width: 88%;
+  background: var(--surface-card);
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 12px;
+  padding: 8px 12px;
+  box-shadow: var(--md-sys-elevation-2);
+  cursor: pointer;
+}
+.dict-word {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 8px;
+}
+.dict-roman {
+  font-size: 13px;
+  color: var(--accent);
+}
+.dict-def {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.dict-loading {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
 .assistant-row {
   display: flex;
   align-items: flex-end;

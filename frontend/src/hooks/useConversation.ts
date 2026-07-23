@@ -17,6 +17,7 @@ export interface AssistantTurn {
   vocab: VocabEntry
   question: QuestionData | null // null while generating (renders a shimmer)
   isOpener: boolean
+  sourceContext?: string // the personal fact this sentence was built from (paperclip reveal)
 }
 export interface UserTurn {
   id: string
@@ -72,6 +73,9 @@ export function useConversation({ language }: UseConversationArgs) {
           }
         } catch (err) {
           console.warn('[conversation] personal context unavailable:', err)
+        }
+        if (personalContext) {
+          patchTurn(turnId, { sourceContext: personalContext } as Partial<AssistantTurn>)
         }
         const conversationContext = lastExchangeRef.current
           ? `你：${lastExchangeRef.current.question}\n我：${lastExchangeRef.current.answer}`

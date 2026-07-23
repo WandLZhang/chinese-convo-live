@@ -12,6 +12,7 @@ function Chat() {
   const { user, loading, error, signIn } = useAuth()
   const [language, setLanguage] = useState<Language>('mandarin')
   const [showWordList, setShowWordList] = useState(false)
+  const [hadDifficulty, setHadDifficulty] = useState(false)
   const convo = useConversation({ language })
 
   // Start (or restart) the conversation on sign-in and whenever the language changes.
@@ -81,6 +82,7 @@ function Chat() {
         language={language}
         onNext={() => void convo.next()}
         onMaster={() => void convo.masterCurrent()}
+        onDifficulty={() => setHadDifficulty(true)}
         onUpdateReviewTime={(id, vocabId, iso) =>
           void convo.updateReviewTimeForTurn(id, vocabId, iso)
         }
@@ -89,6 +91,8 @@ function Chat() {
       <ChatInput
         language={language}
         disabled={!canAnswer}
+        hadDifficulty={hadDifficulty}
+        onHadDifficultyChange={setHadDifficulty}
         onSubmit={(a, d) => void convo.submitAnswer(a, d)}
       />
 

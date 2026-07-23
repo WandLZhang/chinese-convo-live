@@ -25,6 +25,7 @@ FUNCTIONS=(
   "convo_live_evaluate_answer|evaluate_answer|convo_live_evaluate_answer|512Mi|120|public"
   "convo_live_update_review_time|update_review_time|convo_live_evaluate_answer|256Mi|60|public"
   "convo_live_generate_audio|convo_live_generate_audio|convo_live_generate_audio|512Mi|60|public"
+  "convo_live_translate|convo_live_translate|convo_live_translate|256Mi|60|public"
   "convo_live_mark_word_mastered|mark_word_mastered|convo_live_mark_word_mastered|256Mi|60|public"
   "convo_live_ingest_google|convo_live_ingest_google|convo_live_ingest_google|512Mi|600|private"
 )
