@@ -140,7 +140,11 @@ def ingest_gmail(creds):
     state = db.collection("ingest_state").document("gmail")
     page = (state.get().to_dict() or {}).get("pageToken")
     resp = svc.users().messages().list(
-        userId="me", q="is:important",  # Gmail's importance already prioritizes mail involving you
+        userId="me",
+        # Broad: everything in the inbox — personal mail AND everyday/bulk (promotions, updates,
+        # receipts, etc.). It's all useful practice material; the recency-biased picker + distill
+        # surface the good, recent ones. (Was is:important, which missed plenty of person-to-person.)
+        q="in:inbox",
         maxResults=GMAIL_PER_RUN, pageToken=page).execute()
     n = 0
     for m in resp.get("messages", []):
