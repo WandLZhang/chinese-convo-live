@@ -3,7 +3,7 @@ import { Timestamp } from 'firebase/firestore'
 import type { Language, QuestionData, VocabEntry } from '../types'
 import { selectNextVocab, selectRandomVocab } from '../services/vocabRepo'
 import { generateQuestion, generateAudio } from '../services/questions'
-import { pickUnusedContext, markContextUsed } from '../services/contextRepo'
+import { pickContext, markContextUsed } from '../services/contextRepo'
 import {
   evaluateAnswer,
   markWordMastered,
@@ -66,7 +66,7 @@ export function useConversation({ language }: UseConversationArgs) {
         let personalContext = ''
         let contextEntryIds: string[] = []
         try {
-          const entries = await pickUnusedContext(language, 1)
+          const entries = await pickContext(language, 1)
           if (entries.length) {
             personalContext = entries[0].text
             contextEntryIds = entries.map((e) => e.id)

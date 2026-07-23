@@ -3,10 +3,10 @@ import {
   doc,
   getDocs,
   limit,
+  orderBy,
   query,
   serverTimestamp,
   updateDoc,
-  where,
 } from 'firebase/firestore'
 import { db } from './firebase'
 import type { Language } from '../types'
@@ -25,24 +25,38 @@ export interface ContextEntry {
   source: string
 }
 
+const WINDOW = 40 // consider the N most recently ingested facts (recency bias)
+const LRU_POOL = 8 // among those, choose from the K least-recently-used (variety, not deterministic)
+
+function toMillis(v: unknown): number {
+  // Firestore Timestamp -> ms; null/never-used -> 0 (treated as oldest = highest priority).
+  if (v && typeof v === 'object' && 'toMillis' in (v as { toMillis?: () => number })) {
+    return (v as { toMillis: () => number }).toMillis()
+  }
+  return 0
+}
+
 /**
- * Pick up to `n` random UNUSED context entries for this language. The generator uses ONE fact
- * per sentence (several made it list them all), so callers pass n=1; the param stays for
- * flexibility. Empty array when the pool is exhausted (caller falls back to a plain question).
+ * Recency-biased LRU: from the most-recently-ingested facts, return `n` of the least-recently-used
+ * for this language (never-used first), with light randomness for variety. Facts are REUSED, never
+ * permanently retired — the pool is thousands of entries. Empty array only if the collection is empty.
  */
-export async function pickUnusedContext(language: Language, n = 1): Promise<ContextEntry[]> {
+export async function pickContext(language: Language, n = 1): Promise<ContextEntry[]> {
   const snap = await getDocs(
-    query(collection(db, COLLECTION), where(usedField(language), '==', null), limit(60)),
+    query(collection(db, COLLECTION), orderBy('createdAt', 'desc'), limit(WINDOW)),
   )
   if (snap.empty) return []
-  const shuffled = [...snap.docs].sort(() => Math.random() - 0.5).slice(0, n)
-  return shuffled.map((d) => {
+  const field = usedField(language)
+  const byLru = [...snap.docs].sort((a, b) => toMillis(a.data()[field]) - toMillis(b.data()[field]))
+  const pool = byLru.slice(0, Math.max(LRU_POOL, n))
+  const chosen = pool.sort(() => Math.random() - 0.5).slice(0, n)
+  return chosen.map((d) => {
     const data = d.data()
     return { id: d.id, text: String(data.text ?? ''), source: String(data.source ?? '') }
   })
 }
 
-/** Mark an entry used for this language so the randomizer never surfaces it again for it. */
+/** Stamp lastUsedAt for this language so the entry is deprioritized (LRU) — not permanently retired. */
 export async function markContextUsed(id: string, language: Language): Promise<void> {
   await updateDoc(doc(db, COLLECTION, id), { [usedField(language)]: serverTimestamp() })
 }
