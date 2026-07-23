@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import type { Language } from '../types'
 
 interface Props {
@@ -17,18 +17,6 @@ export default function ChatInput({
   onSubmit,
 }: Props) {
   const [text, setText] = useState('')
-  const [listening, setListening] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-  // Web Speech API is untyped in TS libdom without extra defs.
-  const recognitionRef = useRef<any>(null)
-  // On a phone/tablet, hand voice input to the on-screen keyboard (Gboard) — its Cantonese/Mandarin
-  // voice typing is far better than the browser Web Speech API. A page can't trigger the keyboard's
-  // mic from JS, so we just summon the keyboard in the right language (input `lang`) and the user
-  // taps Gboard's mic. Coarse pointer = touch-primary device; desktop keeps Web Speech.
-  const isTouch =
-    typeof window !== 'undefined' &&
-    !!window.matchMedia &&
-    window.matchMedia('(pointer: coarse)').matches
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -37,43 +25,6 @@ export default function ChatInput({
     onSubmit(t, hadDifficulty)
     setText('')
     onHadDifficultyChange(false)
-  }
-
-  const handleMic = () => {
-    if (isTouch) {
-      // Summon the keyboard (in the input's `lang`); the user taps Gboard's own mic to voice-type.
-      inputRef.current?.focus()
-      return
-    }
-    const SR =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SR) {
-      alert('Voice input is not supported in this browser.')
-      return
-    }
-    if (listening) {
-      recognitionRef.current?.stop()
-      return
-    }
-    const rec = new SR()
-    rec.lang = language === 'cantonese' ? 'zh-HK' : 'zh-CN'
-    rec.interimResults = true
-    rec.continuous = false
-    rec.onresult = (ev: any) => {
-      let transcript = ''
-      for (let i = 0; i < ev.results.length; i++) {
-        transcript += ev.results[i][0].transcript
-      }
-      setText(transcript)
-    }
-    rec.onend = () => setListening(false)
-    rec.onerror = (err: any) => {
-      console.error('[stt] recognition error:', err)
-      setListening(false)
-    }
-    recognitionRef.current = rec
-    setListening(true)
-    rec.start()
   }
 
   return (
@@ -89,7 +40,6 @@ export default function ChatInput({
         <span className="material-symbols-outlined">sentiment_stressed</span>
       </button>
       <input
-        ref={inputRef}
         lang={language === 'cantonese' ? 'zh-HK' : 'zh-CN'}
         className="chat-input-field chinese-text"
         value={text}
@@ -97,16 +47,6 @@ export default function ChatInput({
         placeholder={disabled ? 'Wait for the question…' : 'Type your reply…'}
         disabled={disabled}
       />
-      <button
-        type="button"
-        className={`icon-btn ${listening ? 'active' : ''}`}
-        onClick={handleMic}
-        title={isTouch ? 'Voice input via your keyboard mic' : 'Voice input'}
-        aria-label="Voice input"
-        disabled={disabled}
-      >
-        <span className="material-symbols-outlined">{listening ? 'mic' : 'mic_none'}</span>
-      </button>
       <button
         type="submit"
         className="icon-btn send"
