@@ -6,6 +6,7 @@ replacing the old Gemini native-audio (4-6s and garbled Cantonese). Returns base
 WAV to match the client's playAudio (data:audio/wav). Runs as the compute SA (quota -> its own
 project, so no x-goog-user-project header needed).
 """
+import html
 import traceback
 
 import functions_framework
@@ -29,6 +30,20 @@ def _token():
     return _creds.token
 
 
+_BREAK = '<break time="300ms"/>'
+
+
+def _to_ssml(text: str) -> str:
+    """Chirp 3 HD is a fluid model that under-pauses at commas (a plain comma is only a short pause
+    it further shrinks by context), so force a clear clause pause with an SSML <break> after each
+    comma. SSML <break> is supported on Chirp 3 HD synchronous requests for BOTH cmn-CN and yue-HK
+    (the [pause] markup is not — it excludes yue-hk)."""
+    s = html.escape(text)  # keep the SSML valid if the text has & < >
+    for c in ("，", "、", ","):
+        s = s.replace(c, c + _BREAK)
+    return f"<speak>{s}</speak>"
+
+
 @functions_framework.http
 def convo_live_generate_audio(request):
     if request.method == "OPTIONS":
@@ -44,7 +59,7 @@ def convo_live_generate_audio(request):
         r = requests.post(
             "https://texttospeech.googleapis.com/v1/text:synthesize", timeout=30,
             headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"},
-            json={"input": {"text": sentence},
+            json={"input": {"ssml": _to_ssml(sentence)},
                   "voice": {"languageCode": lang_code, "name": voice},
                   "audioConfig": {"audioEncoding": "LINEAR16"}})
         r.raise_for_status()
