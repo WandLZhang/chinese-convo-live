@@ -148,12 +148,20 @@ PROJECT_ID=your-gcp-project RAG_PROJECT_ID=your-rag-corpus-project \
   python bench/bench_colloquial.py --n 20 --methods A,D   # generation: synonym recall + latency
 PROJECT_ID=your-gcp-project python bench/bench_grading.py  # grading: label agreement + latency
 PROJECT_ID=your-gcp-project python bench/bench_tts.py      # TTS: latency + round-trip STT accuracy
+LLM_PROJECT=your-model-project \
+  python bench/bench_generation.py --n 16                  # generation: judge panel + TTFT
 ```
 `bench_colloquial` scores whether a model uses a Words.hk-attested colloquial synonym (objective,
-against the dictionary) — it is what proved the precompute-the-`alt` design. Generation itself now
-uses **Claude Sonnet 5**, picked by a separate holistic naturalness/register judge panel (recall +
-speed alone under-weighted register — that panel lives in the `language-benchmarks` repo); Grok
-remains the grader.
+against the dictionary) — it is what proved the precompute-the-`alt` design.
+
+`bench_generation` is the one that picks the generation model: it imports the **real production
+prompt** and runs it over real vocab + real context, then scores candidates with an anonymized,
+comparative two-family LLM-judge panel on word usage/register, grammar and naturalness — the axis
+recall + latency missed. TTFT is reported separately, since the sentence is streamed. Latest run
+(n=16): Claude Sonnet 5 3.75 @ 0.70s TTFT vs Claude Opus 5 4.00 @ 5-11s TTFT (and only 8/16 completed
+— capacity `overloaded_error`) vs grok-4.20 2.88 @ 0.45s. Sonnet 5 stays: a +0.25 quality edge does
+not pay for a 7-15x TTFT regression on every turn. Grok remains the grader and translator.
+Note: results land in `bench/results/` and are gitignored — the prompts embed real personal facts.
 
 ## Security model
 
