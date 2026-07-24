@@ -6,8 +6,6 @@ import google.auth.transport.requests
 import requests
 import os
 from datetime import datetime, timedelta
-import ToJyutping
-from pypinyin import pinyin, Style
 import json
 from google.protobuf.timestamp_pb2 import Timestamp
 
@@ -15,23 +13,12 @@ from google.protobuf.timestamp_pb2 import Timestamp
 db = firestore.Client()
 
 # --- Grading LLM: Grok 4.1 Fast — benchmark-selected (100% fluent/meaningful agreement, ~1.1s;
-# vs Sonnet 92%/4.7s). Grading is assess + rewrite; romanization is offloaded to a library. ---
+# vs Sonnet 92%/4.7s). Grading = assess (fluent, meaningful_usage) + feedback + a natural reply. ---
 _creds, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 LLM_PROJECT = os.getenv('PROJECT_ID') or _adc_project  # deploy project; no hardcoded id
 GRADE_MODEL = "xai/grok-4.1-fast-non-reasoning"
 _GROK_URL = (f"https://aiplatform.googleapis.com/v1/projects/{LLM_PROJECT}"
              "/locations/global/endpoints/openapi/chat/completions")
-
-
-def romanize(text: str, language: str) -> str:
-    """Deterministic transliteration — a library beats the LLM (esp. jyutping tones) and is instant."""
-    try:
-        if language == 'cantonese':
-            return " ".join(j for _, j in ToJyutping.get_jyutping_list(text) if j)
-        return " ".join(x[0] for x in pinyin(text, style=Style.TONE) if any(c.isalpha() for c in x[0]))
-    except Exception as e:  # noqa: BLE001
-        print(f"romanize error: {e}")
-        return ""
 
 
 def _grok_grade(system_prompt: str, user_content: str) -> dict:
@@ -81,76 +68,39 @@ def grade_answer(user_answer: str, vocab_word: str, language: str, vocab_entry: 
     # Use generated question if provided, otherwise fall back to entry
     question = generated_question if generated_question else vocab_entry.get(language.lower(), '')
     
-    system_prompt = f"""You are a language evaluation assistant specializing in {language}. 
-    Analyze the following answer using these criteria:
+    system_prompt = f"""You are a relaxed {language} conversation partner grading a learner's spoken reply
+to this question: "{question}". Grade it like a friendly chat, NOT an exam.
 
-    1. Question Response: Does the answer:
-       - Actually answer the question being asked: "{question}"
-       - Show understanding of the question's intent
-       - Provide relevant information
-       - Not just repeat or rephrase the question
-    
-    2. Fluency: Is the sentence natural and well-constructed? Consider:
-       - Grammar and word order
-       - Natural expression and colloquialisms
-       - Appropriate particles and measure words
-    
-    3. Vocabulary/Expression Usage:
-       CRITICAL: Your improved answer MUST use the word '{target_word}' - this is non-negotiable.
-       {f"This is the Cantonese word used in the question that corresponds to the meaning of '{vocab_word}'. Use it naturally and meaningfully." if requires_alternative else f"Evaluate whether the vocabulary word '{vocab_word}' is used properly and meaningfully in the answer."}
-       Consider:
-       - Context appropriateness
-       - Natural expression
-       - Complexity beyond basic usage
-    
-    4. English/Romanization: Check for:
-       - English word substitutions
-       - Romanized filler words
-       - Unnecessary mixed language usage
+A reply is GOOD as long as ALL of these hold:
+  - it uses the target word/expression '{target_word}' correctly and meaningfully;
+  - the grammar is okay (a native speaker would understand it and find it natural enough);
+  - it is at least loosely related to the topic.
+It does NOT need to fully or directly answer the question — a related, grammatical reply that uses the
+word is exactly what a normal conversation is. Don't penalize short, casual, or tangential replies, and
+never require the reply to "answer" anything.
 
-    IMPORTANT: You must evaluate the answer in relation to the generated question "{question}", not the original entry in the database.
+Return ONLY a JSON object with these fields:
+{{
+  "fluent": <boolean>,           // true if the GRAMMAR is okay (no real grammatical errors)
+  "meaningful_usage": <boolean>, // true if '{target_word}' is used correctly and meaningfully
+  "improved_answer": <string>,   // a NATURAL reply a real person would actually say in this chat, using
+                                 // '{target_word}'. Make it sound like real speech — do NOT restate or
+                                 // echo the question back.
+  "feedback": <string>           // Priority: (1) if '{target_word}' is missing or misused, briefly tell
+                                 // them to work it in; else (2) if there is a GRAMMAR MISTAKE, give ONE
+                                 // short, specific English correction naming what's wrong and the fix
+                                 // (this is the pedagogical point); else (3) a brief encouraging note
+                                 // (<=8 words). English only, one sentence, no markdown. Do NOT nag
+                                 // about "not answering the question" or length.
+}}
+{f"Cantonese note: '{target_word}' is the spoken form to check — judge natural expression of the meaning." if requires_alternative else ""}"""
 
-    Vocabulary word: {vocab_word}
-    User's answer: {user_answer}
-    {"Note: This is Cantonese mode and the vocabulary word is not commonly used in Cantonese, so evaluate based on natural expression of the meaning rather than exact word usage." if requires_alternative else ""}
-    
-    Return your evaluation as a valid JSON object with exactly these fields:
-    {{
-      "fluent": boolean,           // true if sentence is natural, grammatical, and actually answers the question
-      "meaningful_usage": boolean, // true if meaning is expressed well (for Cantonese alternatives) or word is used properly
-      "improved_answer": string,  // better version that MUST use the vocabulary word (or for Cantonese: the same word used in the question)
-      "feedback": string         // ONE short English sentence (max ~20 words), no markdown/lists
-    }}
-
-    IMPORTANT: Ensure your response is ONLY the JSON object, with no additional text or explanation.
-    Use double quotes for strings and proper JSON syntax.
-    CRITICAL: The "feedback" field MUST be written in English, even when evaluating Cantonese or Mandarin answers.
-
-    Keep the "feedback" field to ONE short, encouraging English sentence (max ~20 words)
-    that names the single most important thing to fix. Do NOT use markdown, numbered lists,
-    headers, or multiple sentences.
-    """
-
-    context = {
-        "vocabulary_word": vocab_word,
-        "user_answer": user_answer,
-        "original_entry": vocab_entry.get(language.lower(), ""),
-        "requires_alternative": requires_alternative,
-        "evaluation_mode": "alternative_expression" if requires_alternative else "exact_word",
-        "question": question
-    }
-
-    user_content = f"""Context: {context}
-
-Evaluation Mode: {context['evaluation_mode']}
-{"Since this word is not commonly used in Cantonese, evaluate based on whether the answer expresses the same meaning naturally using appropriate Cantonese expressions. The meaningful_usage should be true if the meaning is expressed well, even without the exact vocabulary word." if requires_alternative else "Evaluate the proper usage of the specific vocabulary word."}
-
-Please evaluate this answer."""
+    user_content = (f'Question asked: "{question}"\n'
+                    f"Target word the reply should use: {target_word}\n"
+                    f'Learner\'s reply: "{user_answer}"\n\nGrade it now. JSON only.')
     try:
         print("\n=== Sending grading request to Grok ===")
         evaluation = _grok_grade(system_prompt, user_content)
-        # Romanization is deterministic — override whatever the LLM produced with the library value.
-        evaluation["romanization"] = romanize(user_answer, language)
         print("\n=== Parsed Evaluation ===")
         print(json.dumps(evaluation, indent=2, ensure_ascii=False))
         return evaluation

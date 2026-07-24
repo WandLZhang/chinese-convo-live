@@ -3,8 +3,8 @@ import type { Language } from '../types'
 import type { AssistantTurn, Turn, UserTurn } from '../hooks/useConversation'
 import TtsButton from './TtsButton'
 import CritiquePanel from './CritiquePanel'
+import TappableText from './TappableText'
 import { translateSentence } from '../services/translate'
-import { isCjk, lookupAt, type Lookup } from '../services/dict'
 
 interface Props {
   turns: Turn[]
@@ -71,6 +71,7 @@ export default function ConversationView({
             <UserBubble
               key={turn.id}
               turn={turn}
+              language={language}
               isLatest={i === lastUserIdx}
               onNext={onNext}
               onMaster={onMaster}
@@ -89,65 +90,6 @@ export default function ConversationView({
   )
 }
 
-/** The generated sentence with each CJK character tappable for a dictionary pop-out. */
-function TappableSentence({
-  text,
-  onTapChar,
-}: {
-  text: string
-  onTapChar: (i: number) => void
-}) {
-  // split('') → one UTF-16 unit per item; index aligns with slice(i) in the dict lookup.
-  return (
-    <>
-      {text.split('').map((ch, i) =>
-        isCjk(ch) ? (
-          <span key={i} className="tap-char" onClick={() => onTapChar(i)}>
-            {ch}
-          </span>
-        ) : (
-          <span key={i}>{ch}</span>
-        ),
-      )}
-    </>
-  )
-}
-
-function DictPopover({
-  lookup,
-  loading,
-  onClose,
-}: {
-  lookup: Lookup | null
-  loading: boolean
-  onClose: () => void
-}) {
-  return (
-    <div className="dict-pop" onClick={onClose} title="Tap to dismiss">
-      {loading ? (
-        <span className="dict-loading">looking up…</span>
-      ) : (
-        lookup && (
-          <>
-            <span className="dict-word chinese-text">{lookup.word}</span>
-            {lookup.reading.length > 0 && (
-              <span className="dict-roman">
-                {lookup.reading.map((seg, i) => (
-                  <span key={i} style={{ color: seg.color }}>
-                    {i > 0 ? ' ' : ''}
-                    {seg.text}
-                  </span>
-                ))}
-              </span>
-            )}
-            <span className="dict-def">{lookup.def}</span>
-          </>
-        )
-      )}
-    </div>
-  )
-}
-
 function AssistantBubble({
   turn,
   language,
@@ -162,8 +104,6 @@ function AssistantBubble({
   const [translation, setTranslation] = useState('')
   const [translating, setTranslating] = useState(false)
   const [showContext, setShowContext] = useState(false)
-  const [lookup, setLookup] = useState<Lookup | null>(null)
-  const [lookupLoading, setLookupLoading] = useState(false)
 
   const handleTranslate = async () => {
     if (!q) return
@@ -181,22 +121,6 @@ function AssistantBubble({
       setTranslation('⚠️ translation failed')
     } finally {
       setTranslating(false)
-    }
-  }
-
-  const handleTapChar = async (i: number) => {
-    if (!q) return
-    onDifficulty() // needing a definition counts as "had trouble" → SRS reschedules sooner
-    setLookup(null)
-    setLookupLoading(true)
-    try {
-      const r = await lookupAt(q.question, i, language)
-      setLookup(r ?? { word: q.question[i], reading: [], def: '(no dictionary entry)' })
-    } catch (err) {
-      console.error('[dict] lookup failed:', err)
-      setLookup({ word: q.question[i], reading: [], def: '(dictionary unavailable)' })
-    } finally {
-      setLookupLoading(false)
     }
   }
 
@@ -231,7 +155,7 @@ function AssistantBubble({
       {q ? (
         <div className="assistant-row">
           <div className="message left chinese-text">
-            <TappableSentence text={q.question} onTapChar={(i) => void handleTapChar(i)} />
+            <TappableText text={q.question} language={language} onWordTap={onDifficulty} />
 
             {showTranslation && (
               <div className="bubble-extra">
@@ -258,22 +182,20 @@ function AssistantBubble({
           <span className="skeleton-text line-2" />
         </div>
       )}
-
-      {(lookup || lookupLoading) && (
-        <DictPopover lookup={lookup} loading={lookupLoading} onClose={() => setLookup(null)} />
-      )}
     </div>
   )
 }
 
 function UserBubble({
   turn,
+  language,
   isLatest,
   onNext,
   onMaster,
   onUpdateReviewTime,
 }: {
   turn: UserTurn
+  language: Language
   isLatest: boolean
   onNext: () => void
   onMaster: () => void
@@ -287,6 +209,7 @@ function UserBubble({
       {turn.evaluation && (
         <CritiquePanel
           evaluation={turn.evaluation}
+          language={language}
           nextReview={turn.nextReview}
           isLatest={isLatest}
           onUpdateReviewTime={onUpdateReviewTime}

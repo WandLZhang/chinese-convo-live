@@ -235,7 +235,6 @@ export function useConversation({ language }: UseConversationArgs) {
           evaluation: {
             fluent: false,
             meaningful_usage: false,
-            romanization: '',
             feedback: '⚠️ Grading failed. Please try again.',
           },
         } as Partial<UserTurn>)

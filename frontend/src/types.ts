@@ -37,7 +37,6 @@ export interface QuestionData {
 export interface Evaluation {
   fluent: boolean
   meaningful_usage: boolean
-  romanization: string
   improved_answer?: string
   feedback: string
 }

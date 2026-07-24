@@ -8,7 +8,6 @@ const MARK_MASTERED_URL = `${functionBase}/convo_live_mark_word_mastered`
 export interface AnswerEvaluation {
   fluent: boolean
   meaningful_usage: boolean
-  romanization: string
   improved_answer?: string
   feedback: string
 }

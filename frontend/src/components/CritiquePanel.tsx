@@ -1,10 +1,13 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import type { Timestamp } from 'firebase/firestore'
 import type { AnswerEvaluation } from '../services/scheduler'
+import type { Language } from '../types'
 import Markdown from './Markdown'
+import TappableText from './TappableText'
 
 interface Props {
   evaluation: AnswerEvaluation
+  language: Language
   nextReview?: Timestamp
   isLatest: boolean
   onUpdateReviewTime: (iso: string) => void
@@ -23,6 +26,7 @@ function Badge({ ok, label }: { ok: boolean; label: string }) {
 
 export default function CritiquePanel({
   evaluation,
+  language,
   nextReview,
   isLatest,
   onUpdateReviewTime,
@@ -44,8 +48,6 @@ export default function CritiquePanel({
     }
   }
 
-  const romanization = evaluation.romanization?.trim() ?? ''
-  const showRoman = romanization !== '' && romanization.toUpperCase() !== 'N/A'
   const feedback = evaluation.feedback?.trim() ?? ''
   const longFeedback = feedback.length > 150
 
@@ -56,12 +58,13 @@ export default function CritiquePanel({
         <Badge ok={evaluation.meaningful_usage} label="uses word" />
       </div>
 
-      {showRoman && <p className="critique-roman">{romanization}</p>}
 
       {evaluation.improved_answer && (
         <div className="critique-improved">
-          <span className="critique-label">Better</span>
-          <p className="chinese-text">{evaluation.improved_answer}</p>
+          <span className="critique-label">Say it like</span>
+          <div className="chinese-text critique-improved-text">
+            <TappableText text={evaluation.improved_answer} language={language} />
+          </div>
         </div>
       )}
 
