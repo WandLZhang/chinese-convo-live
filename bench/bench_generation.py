@@ -49,6 +49,11 @@ CANDIDATES = [
     {"id": "claude-sonnet-5", "vertex_id": "claude-sonnet-5", "family": "claude"},   # currently shipped
     {"id": "claude-opus-5", "vertex_id": "claude-opus-5", "family": "claude"},
     {"id": "grok-4.20", "vertex_id": "xai/grok-4.20-non-reasoning", "family": "maas"},
+    # Gemini spends 600-700 thinking tokens before ~25 tokens of text, so it needs either a large
+    # budget or thinking off; with a small max_tokens it returns truncated/garbled output.
+    {"id": "gemini-3.6-flash", "vertex_id": "gemini-3.6-flash", "family": "gemini"},
+    {"id": "gemini-3.6-flash-nothink", "vertex_id": "gemini-3.6-flash", "family": "gemini", "no_thinking": True},
+    {"id": "gemini-3.5-flash-nothink", "vertex_id": "gemini-3.5-flash", "family": "gemini", "no_thinking": True},
 ]
 # Judges from two families; neither is a candidate (avoids self-preference).
 JUDGES = [
@@ -89,6 +94,21 @@ def generate(model, system, nudge, max_tokens=1200):
         with _ant.messages.stream(model=model["vertex_id"], max_tokens=max_tokens, system=system,
                                   messages=[{"role": "user", "content": nudge}]) as s:
             for t in s.text_stream:
+                if ttft is None:
+                    ttft = time.monotonic() - t0
+                parts.append(t)
+    elif model["family"] == "gemini":
+        from google import genai
+        from google.genai import types
+        cfg = {"system_instruction": system, "temperature": 0.7, "max_output_tokens": max_tokens}
+        if model.get("no_thinking"):
+            cfg["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        cl = genai.Client(vertexai=True, project=LLM_PROJECT, location="global")
+        for chunk in cl.models.generate_content_stream(
+                model=model["vertex_id"], contents=nudge,
+                config=types.GenerateContentConfig(**cfg)):
+            t = getattr(chunk, "text", None)
+            if t:
                 if ttft is None:
                     ttft = time.monotonic() - t0
                 parts.append(t)
@@ -175,8 +195,14 @@ def load_items(n):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=12)
+    ap.add_argument("--models", default="", help="comma list of candidate ids (default: all)")
     ap.add_argument("--out", default="bench/results/generation_models.jsonl")
     args = ap.parse_args()
+
+    global CANDIDATES
+    if args.models:
+        want = {m.strip() for m in args.models.split(",")}
+        CANDIDATES = [c for c in CANDIDATES if c["id"] in want]
 
     items = load_items(args.n)
     print(f"{len(items)} items | candidates: {[c['id'] for c in CANDIDATES]} | judges: {[j['id'] for j in JUDGES]}\n")

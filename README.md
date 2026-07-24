@@ -161,6 +161,13 @@ recall + latency missed. TTFT is reported separately, since the sentence is stre
 (n=16): Claude Sonnet 5 3.75 @ 0.70s TTFT vs Claude Opus 5 4.00 @ 5-11s TTFT (and only 8/16 completed
 — capacity `overloaded_error`) vs grok-4.20 2.88 @ 0.45s. Sonnet 5 stays: a +0.25 quality edge does
 not pay for a 7-15x TTFT regression on every turn. Grok remains the grader and translator.
+
+Gemini needs care in this harness: it spends 600-700 *thinking* tokens before ~25 tokens of text, so a
+small `max_tokens` truncates it into garbage (that, not quality, is why an early run scored it ~1/5).
+Given room (n=10): gemini-3.6-flash 3.85 @ 6.6s TTFT — best quality but unusable for a streamed
+sentence, and it leaked its scratchpad into one answer; with `thinking_budget=0` it drops to 3.45-3.50
+@ 1.7-1.8s, i.e. level with Sonnet 5's 3.45 but at 2x the TTFT (0.80s). Hence `-nothink` candidate
+variants in the script.
 Note: results land in `bench/results/` and are gitignored — the prompts embed real personal facts.
 
 ## Security model
