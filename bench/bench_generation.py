@@ -13,7 +13,7 @@ Latency is reported separately (TTFT matters — the sentence is streamed).
 
 Run:
   source bench/.venv/bin/activate
-  LLM_PROJECT=wz-cloud-claude python bench/bench_generation.py --n 12
+  LLM_PROJECT=your-model-project DATA_PROJECT=your-gcp-project python bench/bench_generation.py --n 16
 """
 import argparse
 import json
