@@ -33,7 +33,7 @@ from google.cloud import firestore
 # Reuse the deployed function's prompt builder verbatim — no drift between bench and production.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "functions", "convo_live_generate_question"))
-from main import build_prompt  # noqa: E402
+from main import build_prompt, MAX_TOKENS  # noqa: E402  — same prompt AND same token budget as prod
 
 LLM_PROJECT = os.getenv("LLM_PROJECT", "your-model-project")  # where the candidate models are enabled
 DATA_PROJECT = os.getenv("DATA_PROJECT", "your-gcp-project")  # where vocab + context live
@@ -85,7 +85,7 @@ def _token():
     return _creds.token
 
 
-def generate(model, system, nudge, max_tokens=1200):
+def generate(model, system, nudge, max_tokens=MAX_TOKENS):
     """Streamed generation -> (text, ttft, total). Streaming so TTFT is the real felt latency."""
     t0 = time.monotonic()
     ttft = None

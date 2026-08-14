@@ -44,6 +44,12 @@ LLM_PROJECT = os.getenv("PROJECT_ID") or _adc_project
 GEN_MODEL = "claude-sonnet-5"  # benchmark-selected: most authentic colloquial Cantonese/Mandarin
 _client = AnthropicVertex(region="global", project_id=LLM_PROJECT)
 
+# Sonnet 5 emits a thinking block on EVERY call (~120-190 tokens) before the sentence, so a tight
+# budget truncates mid-sentence — worst on awkward-to-place words (查获 thought ~185 tokens and got
+# cut at the old value of 200). Streaming means unused budget costs nothing. Exported so the
+# benchmark imports the SAME value as production (bench/prod drift is what hid the truncation bug).
+MAX_TOKENS = 1200
+
 CORS = {"Access-Control-Allow-Origin": "*"}
 STREAM_HEADERS = {**CORS, "X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 LANG = {"cantonese": "廣東話", "mandarin": "普通話"}
@@ -104,7 +110,7 @@ def convo_live_generate_question(request):
         personal_context = (req.get("personalContext") or "").strip()
         conversation_context = (req.get("conversationContext") or "").strip()
         system, target = build_prompt(word, alt, language, personal_context, conversation_context)
-        max_tokens = 200
+        max_tokens = MAX_TOKENS
         nudge = "開始。" if language == "cantonese" else "开始。"
         logger.info(f"word={word} alt={alt} language={language} target={target} "
                     f"pcLen={len(personal_context)} ccLen={len(conversation_context)}")

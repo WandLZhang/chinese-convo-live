@@ -15,4 +15,8 @@ export const firebaseConfig = {
 export const appConfig = {
   ownerEmail: 'you@example.com',
   region: 'us-east4',
+  // Speech-to-text runs on Cloud Run (SenseVoice needs ffmpeg + a 237MB model in the image), so it
+  // has its own *.run.app URL rather than the derived cloudfunctions.net base.
+  // scripts/deploy_transcribe.sh prints this after deploying.
+  transcribeUrl: 'https://convo-live-transcribe-xxxxxxxx.us-east4.run.app/',
 }

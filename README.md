@@ -53,6 +53,7 @@ judgment. (So that 55-60% describes the *rejected* design, not the shipped app, 
 | Grading | **Grok 4.1 Fast** (Vertex MaaS) | 100% agreement with gold labels on the curated set, ~1.1s (classification is easy — speed wins) |
 | Romanization | **ToJyutping / pypinyin** (libraries) | deterministic and instant — beats the LLM, especially jyutping tones |
 | Text-to-speech | **Cloud TTS Chirp 3 HD** (`yue-HK`, `cmn-CN`) | ~0.6s both languages; replaced Gemini native-audio (4-6s, garbled Cantonese) |
+| Speech-to-text (mic) | **SenseVoice** self-hosted (sherpa-onnx on Cloud Run) | best on REAL Cantonese in a 6-model benchmark (meaning 4.00/5 vs gemini-3.5-flash 3.67, chirp_3 3.75) and ~5x faster end to end: 0.85s warm, 0.95s after idle |
 
 The functions derive their GCP project from Application Default Credentials, so **no project id is
 hardcoded** — deploy them anywhere the models are enabled in Vertex (Claude Sonnet 5 for generation,
@@ -70,6 +71,7 @@ functions/
                                     update_review_time — two handlers, one source)
   convo_live_generate_audio/      Cloud TTS Chirp 3 HD -> base64 WAV
   convo_live_mark_word_mastered/  mark a word mastered
+  convo_live_transcribe/          mic -> text (SenseVoice container on Cloud Run, NOT a function)
   convo_live_ingest_google/       hourly server-side Calendar/Gmail/Drive -> context_entries (private)
 bench/                            latency + quality harness (generation, grading, TTS)
 audit/                            offline Words.hk rule audit that computes the `alt` field
@@ -115,8 +117,14 @@ to your own globally-unique site name.
 ### 4. Deploy
 ```bash
 PROJECT_ID=your-gcp-project ./scripts/deploy_functions.sh
+PROJECT_ID=your-gcp-project ./scripts/deploy_transcribe.sh   # Cloud Run container (speech-to-text)
 (cd frontend && npm install && npm run build) && firebase deploy --only hosting
 ```
+`deploy_transcribe.sh` prints the service URL — paste it into `appConfig.transcribeUrl`. Speech-to-text
+ships as a **container** rather than a function because it needs the `ffmpeg` binary and bakes a 237 MB
+model into the image. Known limitation: SenseVoice garbles English/proper nouns
+("Crunchyroll" -> "CRUNCHY ROALD"), so the mic's ⏹ button drops the transcript into the input for review
+before it is graded; ↑ transcribes and sends in one step.
 
 ### 5. (Optional) Personalization
 ```bash

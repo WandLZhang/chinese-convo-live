@@ -1,0 +1,4 @@
+flask==3.0.2
+gunicorn==23.*
+numpy==2.*
+sherpa-onnx==1.13.5

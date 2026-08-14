@@ -20,6 +20,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # name | entry-point | source-subdir | memory | timeout | auth(public|private)
 # Note: evaluate_answer and update_review_time share one source dir (two handlers).
+# convo_live_transcribe is NOT here — it is a Cloud Run container (scripts/deploy_transcribe.sh).
 FUNCTIONS=(
   "convo_live_generate_question|convo_live_generate_question|convo_live_generate_question|512Mi|120|public"
   "convo_live_evaluate_answer|evaluate_answer|convo_live_evaluate_answer|512Mi|120|public"
