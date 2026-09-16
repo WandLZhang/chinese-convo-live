@@ -2,7 +2,7 @@ import type { Language } from '../types'
 
 // Public jyutping+pinyin dictionary (CC-CEDICT + CC-Canto, ~230k entries), keyed by word
 // (traditional + simplified). Same blob used by subtitle-everything / lockscreen-translate.
-const DICT_URL = 'https://storage.googleapis.com/wz-qwen-test-canto-dict/canto-dict.min.json'
+const DICT_URL = 'https://storage.googleapis.com/wz-canto-dict/canto-dict.min.json'
 
 interface RawEntry {
   d: string[] // definitions
