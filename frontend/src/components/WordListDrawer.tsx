@@ -12,7 +12,7 @@ interface Props {
 type SectionKey = 'scheduled' | 'new' | 'mastered'
 
 export default function WordListDrawer({ language, onClose, onPractice }: Props) {
-  const { lists, loading, refresh, scheduleWord, unmasterWord } = useSrs(language)
+  const { lists, loading, error, refresh, scheduleWord, unmasterWord } = useSrs(language)
   const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
     scheduled: false,
     new: false,
@@ -40,6 +40,7 @@ export default function WordListDrawer({ language, onClose, onPractice }: Props)
           </button>
         </div>
         {loading && <p className="muted drawer-loading">Loading…</p>}
+        {error && <p className="error drawer-loading">Couldn't load the word list: {error}</p>}
 
         <Section
           title="Scheduled"

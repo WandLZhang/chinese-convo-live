@@ -20,11 +20,17 @@ function isoMinutesFromNow(minutes: number): string {
 export function useSrs(language: Language) {
   const [lists, setLists] = useState<WordLists>(EMPTY)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       setLists(await fetchWordLists(language))
+    } catch (err) {
+      // Surface it: a failed query used to leave three silently empty sections.
+      console.error('[useSrs] fetchWordLists failed:', err)
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
@@ -47,5 +53,5 @@ export function useSrs(language: Language) {
     [language, scheduleWord],
   )
 
-  return { lists, loading, refresh, scheduleWord, unmasterWord }
+  return { lists, loading, error, refresh, scheduleWord, unmasterWord }
 }
