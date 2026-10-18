@@ -3,7 +3,7 @@ convo_live_ingest_google — hourly server-side ingestion of Calendar / Gmail / 
 `context_entries` personalization DB. Triggered by Cloud Scheduler (OIDC-authenticated invoker).
 
 - OAuth refresh token + client are read from Secret Manager (never env/code/logs).
-- Each raw item is distilled by Grok into ONE short conversation-worthy fact, with a hard
+- Each raw item is distilled by LLM_MODEL into ONE short conversation-worthy fact, with a hard
   identity-theft filter (drop credentials/financial/ID data).
 - Entries dedup by hash(source+sourceRef): re-ingesting the same item updates text, never
   duplicates, and never touches the per-language used flags.
@@ -27,8 +27,8 @@ from googleapiclient.discovery import build
 
 _adc, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 PROJECT = os.getenv("PROJECT_ID") or _adc_project  # deploy project; no hardcoded id
-GROK_MODEL = "xai/grok-4.20-non-reasoning"
-GROK_URL = (f"https://aiplatform.googleapis.com/v1/projects/{PROJECT}"
+LLM_MODEL = "google/gemini-3.5-flash-lite"
+LLM_URL = (f"https://aiplatform.googleapis.com/v1/projects/{PROJECT}"
             "/locations/global/endpoints/openapi/chat/completions")
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly",
           "https://www.googleapis.com/auth/gmail.readonly",
@@ -56,7 +56,7 @@ def _google_creds():
     return creds
 
 
-def _grok_token():
+def _llm_token():
     _adc.refresh(google.auth.transport.requests.Request())
     return _adc.token
 
@@ -69,12 +69,13 @@ def distill(raw, source):
             "API keys; financial account/card/routing/CVV numbers; SSN/national-ID/passport/license "
             "numbers; full home address. If the item is entirely sensitive or has no conversational "
             "value, output NOTHING. Output ONLY the fact, no preamble, no quotes.")
-    r = requests.post(GROK_URL, timeout=60,
-        headers={"Authorization": f"Bearer {_grok_token()}", "Content-Type": "application/json"},
-        json={"model": GROK_MODEL, "temperature": 0.3, "max_tokens": 60,
+    r = requests.post(LLM_URL, timeout=60,
+        headers={"Authorization": f"Bearer {_llm_token()}", "Content-Type": "application/json"},
+        json={"model": LLM_MODEL, "temperature": 0.3, "max_tokens": 60,
               "messages": [{"role": "system", "content": sysp},
                            {"role": "user", "content": f"Source: {source}\nRaw item:\n{raw[:4000]}"}]})
-    r.raise_for_status()
+    if r.status_code != 200:
+        raise RuntimeError(f"{LLM_MODEL} returned {r.status_code}: {r.text}")
     content = r.json()["choices"][0]["message"].get("content")  # null when the model emits nothing
     return (content or "").strip()
 

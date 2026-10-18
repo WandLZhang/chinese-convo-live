@@ -1,11 +1,12 @@
 """
 convo_live_translate — stream an English translation of a generated Chinese sentence.
 
-Powers the "eye" reveal in the app. Model: Grok 4.20 non-reasoning (Vertex OpenAI-compatible MaaS
-endpoint). Grok 4.1 Fast was benchmark-selected for translation (accurate, fastest warm TTFT ~0.3s)
-until Vertex stopped serving it (404) in October 2026. Plain-text streamed output (typewriter into
-the bubble). Project from ADC.
+Powers the "eye" reveal in the app. Model: Gemini 3.5 Flash-Lite (Vertex OpenAI-compatible endpoint),
+the fastest model serving on 2026-10-18 (first token ~0.5s). It replaced Grok, which Vertex stopped
+serving (grok-4.1-fast 404, then grok-4.20-non-reasoning 503). Plain-text streamed output (typewriter
+into the bubble). Project from ADC. An upstream error returns 502 with the model's status and body.
 """
+import itertools
 import json
 import os
 import traceback
@@ -18,7 +19,7 @@ from flask import Response, jsonify, stream_with_context
 
 _creds, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 LLM_PROJECT = os.getenv("PROJECT_ID") or _adc_project
-MODEL = "xai/grok-4.20-non-reasoning"
+MODEL = "google/gemini-3.5-flash-lite"
 _ENDPOINT = (f"https://aiplatform.googleapis.com/v1/projects/{LLM_PROJECT}"
              "/locations/global/endpoints/openapi/chat/completions")
 
@@ -47,29 +48,47 @@ def convo_live_translate(request):
                   "language learner. Output ONLY the English translation — one line, no notes, no "
                   "quotes, no pinyin or jyutping.")
 
+        resp = requests.post(
+            _ENDPOINT, stream=True, timeout=60,
+            headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"},
+            json={"model": MODEL, "temperature": 0.2, "max_tokens": 200, "stream": True,
+                  "messages": [{"role": "system", "content": system},
+                               {"role": "user", "content": sentence}]})
+        if resp.status_code != 200:
+            error = f"{MODEL} returned {resp.status_code}: {resp.text}"
+            print(f"translate ({language}) '{sentence}' failed: {error}")
+            return (jsonify({"error": error}), 502, CORS)
+
+        def data_lines():
+            for raw in resp.iter_lines():
+                line = raw.decode("utf-8") if raw else ""
+                if line.startswith("data:"):
+                    yield line[5:].strip()
+
+        # A streamed failure arrives in-band: HTTP 200, then a data event holding "error". Read the
+        # first event before answering so that case returns 502 with the model's message.
+        events = data_lines()
+        first = next(events, "[DONE]")
+        if first.startswith("{") and "error" in json.loads(first):
+            error = f"{MODEL} returned an error: {first}"
+            print(f"translate ({language}) '{sentence}' failed: {error}")
+            return (jsonify({"error": error}), 502, CORS)
+
         def gen():
             collected = []
             try:
-                resp = requests.post(
-                    _ENDPOINT, stream=True, timeout=60,
-                    headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"},
-                    json={"model": MODEL, "temperature": 0.2, "max_tokens": 200, "stream": True,
-                          "messages": [{"role": "system", "content": system},
-                                       {"role": "user", "content": sentence}]})
-                resp.raise_for_status()
-                for raw in resp.iter_lines():
-                    if not raw:
-                        continue
-                    line = raw.decode("utf-8")
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
+                for data in itertools.chain([first], events):
                     if data == "[DONE]":
                         break
                     try:
-                        delta = json.loads(data)["choices"][0]["delta"].get("content")
+                        event = json.loads(data)
                     except Exception:  # noqa: BLE001
                         continue
+                    if "error" in event:
+                        print(f"translate ({language}) '{sentence}' failed mid-stream: {MODEL} returned an error: {data}")
+                        break
+                    choices = event.get("choices") or []
+                    delta = (choices[0].get("delta") or {}).get("content") if choices else None
                     if delta:
                         collected.append(delta)
                         yield delta

@@ -17,7 +17,7 @@ configured account, so a visitor cannot read any data).
 ```
         due/new word ──► generate ──► colloquial sentence + your life + last exchange
                                          │  (Claude Sonnet 5, streamed)
-   you reply ──► grade (Grok) ──► fluent? meaningful? + rewrite + jyutping/pinyin ──► reschedule (SRS)
+   you reply ──► grade (Flash-Lite) ──► fluent? meaningful? + rewrite + jyutping/pinyin ──► reschedule (SRS)
                                          ▲
    personalization DB (context_entries) ┘  built hourly, server-side, from Calendar/Gmail/Drive/Signal
 ```
@@ -50,14 +50,14 @@ judgment. (So that 55-60% describes the *rejected* design, not the shipped app, 
 | Job | Choice | Why |
 |---|---|---|
 | Generation | **Claude Sonnet 5** (Vertex, AnthropicVertex, streamed) | most authentic colloquial register — 雪糕 not 冰淇淋, 擔保 used in its real vouch sense; top of an LLM-judge quality panel (4.21/5); TTFT ~0.6-0.8s |
-| Grading | **Grok 4.20** (Vertex MaaS, non-reasoning) | 100% meaningful-usage and 83% fluent agreement with gold labels on the curated set, ~0.8s (classification is easy — speed wins) |
+| Grading + translation | **Gemini 3.5 Flash-Lite** (Vertex OpenAI-compatible endpoint) | fastest model serving: 92% meaningful-usage and 83% fluent agreement with gold labels on the curated set, ~0.8s per grade, ~0.5s to the first translated token |
 | Romanization | **ToJyutping / pypinyin** (libraries) | deterministic and instant — beats the LLM, especially jyutping tones |
 | Text-to-speech | **Cloud TTS Chirp 3 HD** (`yue-HK`, `cmn-CN`) | ~0.6s both languages; replaced Gemini native-audio (4-6s, garbled Cantonese) |
 | Speech-to-text (mic) | **SenseVoice** self-hosted (sherpa-onnx on Cloud Run) | best on REAL Cantonese in a 6-model benchmark (meaning 4.00/5 vs gemini-3.5-flash 3.67, chirp_3 3.75) and ~5x faster end to end: 0.85s warm, 0.95s after idle |
 
 The functions derive their GCP project from Application Default Credentials, so **no project id is
 hardcoded** — deploy them anywhere the models are enabled in Vertex (Claude Sonnet 5 for generation,
-xAI Grok for grading).
+Gemini 3.5 Flash-Lite for grading and translation).
 
 ---
 
@@ -87,7 +87,7 @@ firestore.indexes.json           SRS composite indexes (nextReview{Mandarin,Cant
 
 ### Prerequisites
 - `gcloud` (authenticated), `firebase-tools`, Node 18+, Python 3.12.
-- A GCP project with billing, and access to Claude Sonnet 5 (generation) + xAI Grok 4.20 (grading) in Vertex Model Garden.
+- A GCP project with billing, and access to Claude Sonnet 5 (generation) + Gemini 3.5 Flash-Lite (grading, translation) in Vertex Model Garden.
 
 ### 1. OAuth consent + client (console — needed only for personalization)
 Create an OAuth consent screen (External, **Testing** mode; add your account as a test user) with
@@ -134,7 +134,7 @@ PROJECT_ID=your-gcp-project OWNER_EMAIL=you@example.com \
 ```
 The Signal reader runs on the private VM (`local/signal_vm_startup.sh` installs signal-cli; link a
 device with `local/signal_link.sh`, then `local/signal_ingest.py` runs hourly via cron). All
-ingestion distills each item through Grok with a hard identity-theft filter before storing.
+ingestion distills each item through Gemini 3.5 Flash-Lite with a hard identity-theft filter before storing.
 
 ---
 
@@ -168,7 +168,7 @@ comparative two-family LLM-judge panel on word usage/register, grammar and natur
 recall + latency missed. TTFT is reported separately, since the sentence is streamed. Latest run
 (n=16): Claude Sonnet 5 3.75 @ 0.70s TTFT vs Claude Opus 5 4.00 @ 5-11s TTFT (and only 8/16 completed
 — capacity `overloaded_error`) vs grok-4.20 2.88 @ 0.45s. Sonnet 5 stays: a +0.25 quality edge does
-not pay for a 7-15x TTFT regression on every turn. Grok remains the grader and translator.
+not pay for a 7-15x TTFT regression on every turn. Gemini 3.5 Flash-Lite is the grader and translator.
 
 Gemini needs care in this harness: it spends 600-700 *thinking* tokens before ~25 tokens of text, so a
 small `max_tokens` truncates it into garbage (that, not quality, is why an early run scored it ~1/5).

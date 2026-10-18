@@ -1,7 +1,7 @@
 #!/opt/venv/bin/python
 """
 Signal ingestion (runs on the convo-live-signal VM, hourly via cron).
-`signal-cli receive` -> distill each incoming message via Grok (identity-theft filter + digit
+`signal-cli receive` -> distill each incoming message via LLM_MODEL (identity-theft filter + digit
 backstop) -> upsert into Firestore `context_entries` (source="signal", dedup by timestamp).
 Uses the VM's attached SA (convo-live-signal: datastore.user + aiplatform.user).
 """
@@ -21,7 +21,8 @@ from google.cloud import firestore
 SIGNAL_CLI = shutil.which("signal-cli") or "/usr/local/bin/signal-cli"
 _creds, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 PROJECT = os.getenv("PROJECT_ID") or _adc_project or "your-gcp-project"  # on the VM: derived from ADC
-GROK_URL = (f"https://aiplatform.googleapis.com/v1/projects/{PROJECT}"
+LLM_MODEL = "google/gemini-3.5-flash-lite"
+LLM_URL = (f"https://aiplatform.googleapis.com/v1/projects/{PROJECT}"
             "/locations/global/endpoints/openapi/chat/completions")
 db = firestore.Client(project=PROJECT)
 
@@ -40,12 +41,13 @@ def _token():
 
 
 def distill(raw):
-    r = requests.post(GROK_URL, timeout=60,
+    r = requests.post(LLM_URL, timeout=60,
         headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"},
-        json={"model": "xai/grok-4.20-non-reasoning", "temperature": 0.3, "max_tokens": 60,
+        json={"model": LLM_MODEL, "temperature": 0.3, "max_tokens": 60,
               "messages": [{"role": "system", "content": DISTILL_SYS},
                            {"role": "user", "content": raw[:4000]}]})
-    r.raise_for_status()
+    if r.status_code != 200:
+        raise RuntimeError(f"{LLM_MODEL} returned {r.status_code}: {r.text}")
     return (r.json()["choices"][0]["message"].get("content") or "").strip()
 
 

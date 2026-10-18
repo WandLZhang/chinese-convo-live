@@ -12,26 +12,27 @@ from google.protobuf.timestamp_pb2 import Timestamp
 # Initialize clients
 db = firestore.Client()
 
-# --- Grading LLM: Grok 4.20 non-reasoning. Grok 4.1 Fast was benchmark-selected (100% fluent/meaningful
-# agreement, ~1.1s; vs Sonnet 92%/4.7s) until Vertex stopped serving it (404) in October 2026.
-# Grading = assess (fluent, meaningful_usage) + feedback + a natural reply. ---
+# --- Grading LLM: Gemini 3.5 Flash-Lite (Vertex OpenAI-compatible endpoint), the fastest model serving on
+# 2026-10-18 (~0.8s per grade). It replaced Grok, which Vertex stopped serving (grok-4.1-fast 404, then
+# grok-4.20-non-reasoning 503). Grading = assess (fluent, meaningful_usage) + feedback + a natural reply. ---
 _creds, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 LLM_PROJECT = os.getenv('PROJECT_ID') or _adc_project  # deploy project; no hardcoded id
-GRADE_MODEL = "xai/grok-4.20-non-reasoning"
-_GROK_URL = (f"https://aiplatform.googleapis.com/v1/projects/{LLM_PROJECT}"
+GRADE_MODEL = "google/gemini-3.5-flash-lite"
+_LLM_URL = (f"https://aiplatform.googleapis.com/v1/projects/{LLM_PROJECT}"
              "/locations/global/endpoints/openapi/chat/completions")
 
 
-def _grok_grade(system_prompt: str, user_content: str) -> dict:
-    """Force a JSON grading object from Grok (OpenAI-compatible Vertex endpoint)."""
+def _llm_grade(system_prompt: str, user_content: str) -> dict:
+    """Force a JSON grading object from GRADE_MODEL (OpenAI-compatible Vertex endpoint)."""
     _creds.refresh(google.auth.transport.requests.Request())
-    resp = requests.post(_GROK_URL, timeout=60,
+    resp = requests.post(_LLM_URL, timeout=60,
         headers={"Authorization": f"Bearer {_creds.token}", "Content-Type": "application/json"},
         json={"model": GRADE_MODEL, "temperature": 0, "max_tokens": 600,
               "response_format": {"type": "json_object"},
               "messages": [{"role": "system", "content": system_prompt},
                            {"role": "user", "content": user_content}]})
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        raise RuntimeError(f"{GRADE_MODEL} returned {resp.status_code}: {resp.text}")
     return json.loads(resp.json()["choices"][0]["message"]["content"])
 
 # Scheduling intervals in minutes
@@ -48,7 +49,7 @@ INTERVALS = {
 }
 
 def grade_answer(user_answer: str, vocab_word: str, language: str, vocab_entry: dict, generated_question: str = None, requires_alternative: bool = False, target_word: str = None) -> dict:
-    """Use Grok to evaluate the answer and provide feedback.
+    """Use GRADE_MODEL to evaluate the answer and provide feedback.
 
     Args:
         requires_alternative: from generate_question — whether a colloquial alternative was used
@@ -100,8 +101,8 @@ Return ONLY a JSON object with these fields:
                     f"Target word the reply should use: {target_word}\n"
                     f'Learner\'s reply: "{user_answer}"\n\nGrade it now. JSON only.')
     try:
-        print("\n=== Sending grading request to Grok ===")
-        evaluation = _grok_grade(system_prompt, user_content)
+        print(f"\n=== Sending grading request to {GRADE_MODEL} ===")
+        evaluation = _llm_grade(system_prompt, user_content)
         print("\n=== Parsed Evaluation ===")
         print(json.dumps(evaluation, indent=2, ensure_ascii=False))
         return evaluation
