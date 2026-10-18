@@ -50,7 +50,7 @@ judgment. (So that 55-60% describes the *rejected* design, not the shipped app, 
 | Job | Choice | Why |
 |---|---|---|
 | Generation | **Claude Sonnet 5** (Vertex, AnthropicVertex, streamed) | most authentic colloquial register — 雪糕 not 冰淇淋, 擔保 used in its real vouch sense; top of an LLM-judge quality panel (4.21/5); TTFT ~0.6-0.8s |
-| Grading | **Grok 4.1 Fast** (Vertex MaaS) | 100% agreement with gold labels on the curated set, ~1.1s (classification is easy — speed wins) |
+| Grading | **Grok 4.20** (Vertex MaaS, non-reasoning) | 100% meaningful-usage and 83% fluent agreement with gold labels on the curated set, ~0.8s (classification is easy — speed wins) |
 | Romanization | **ToJyutping / pypinyin** (libraries) | deterministic and instant — beats the LLM, especially jyutping tones |
 | Text-to-speech | **Cloud TTS Chirp 3 HD** (`yue-HK`, `cmn-CN`) | ~0.6s both languages; replaced Gemini native-audio (4-6s, garbled Cantonese) |
 | Speech-to-text (mic) | **SenseVoice** self-hosted (sherpa-onnx on Cloud Run) | best on REAL Cantonese in a 6-model benchmark (meaning 4.00/5 vs gemini-3.5-flash 3.67, chirp_3 3.75) and ~5x faster end to end: 0.85s warm, 0.95s after idle |
@@ -87,7 +87,7 @@ firestore.indexes.json           SRS composite indexes (nextReview{Mandarin,Cant
 
 ### Prerequisites
 - `gcloud` (authenticated), `firebase-tools`, Node 18+, Python 3.12.
-- A GCP project with billing, and access to Claude Sonnet 5 (generation) + xAI Grok 4.1 Fast (grading) in Vertex Model Garden.
+- A GCP project with billing, and access to Claude Sonnet 5 (generation) + xAI Grok 4.20 (grading) in Vertex Model Garden.
 
 ### 1. OAuth consent + client (console — needed only for personalization)
 Create an OAuth consent screen (External, **Testing** mode; add your account as a test user) with

@@ -1,9 +1,10 @@
 """
 convo_live_translate — stream an English translation of a generated Chinese sentence.
 
-Powers the "eye" reveal in the app. Model: Grok 4.1 Fast (Vertex OpenAI-compatible MaaS endpoint) —
-benchmark-selected for translation: accurate + fastest warm TTFT (~0.3s), already enabled for
-grading, cheap. Plain-text streamed output (typewriter into the bubble). Project from ADC.
+Powers the "eye" reveal in the app. Model: Grok 4.20 non-reasoning (Vertex OpenAI-compatible MaaS
+endpoint). Grok 4.1 Fast was benchmark-selected for translation (accurate, fastest warm TTFT ~0.3s)
+until Vertex stopped serving it (404) in October 2026. Plain-text streamed output (typewriter into
+the bubble). Project from ADC.
 """
 import json
 import os
@@ -17,7 +18,7 @@ from flask import Response, jsonify, stream_with_context
 
 _creds, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 LLM_PROJECT = os.getenv("PROJECT_ID") or _adc_project
-MODEL = "xai/grok-4.1-fast-non-reasoning"
+MODEL = "xai/grok-4.20-non-reasoning"
 _ENDPOINT = (f"https://aiplatform.googleapis.com/v1/projects/{LLM_PROJECT}"
              "/locations/global/endpoints/openapi/chat/completions")
 

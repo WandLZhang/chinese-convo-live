@@ -12,11 +12,12 @@ from google.protobuf.timestamp_pb2 import Timestamp
 # Initialize clients
 db = firestore.Client()
 
-# --- Grading LLM: Grok 4.1 Fast — benchmark-selected (100% fluent/meaningful agreement, ~1.1s;
-# vs Sonnet 92%/4.7s). Grading = assess (fluent, meaningful_usage) + feedback + a natural reply. ---
+# --- Grading LLM: Grok 4.20 non-reasoning. Grok 4.1 Fast was benchmark-selected (100% fluent/meaningful
+# agreement, ~1.1s; vs Sonnet 92%/4.7s) until Vertex stopped serving it (404) in October 2026.
+# Grading = assess (fluent, meaningful_usage) + feedback + a natural reply. ---
 _creds, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 LLM_PROJECT = os.getenv('PROJECT_ID') or _adc_project  # deploy project; no hardcoded id
-GRADE_MODEL = "xai/grok-4.1-fast-non-reasoning"
+GRADE_MODEL = "xai/grok-4.20-non-reasoning"
 _GROK_URL = (f"https://aiplatform.googleapis.com/v1/projects/{LLM_PROJECT}"
              "/locations/global/endpoints/openapi/chat/completions")
 

@@ -27,7 +27,7 @@ from googleapiclient.discovery import build
 
 _adc, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 PROJECT = os.getenv("PROJECT_ID") or _adc_project  # deploy project; no hardcoded id
-GROK_MODEL = "xai/grok-4.1-fast-non-reasoning"
+GROK_MODEL = "xai/grok-4.20-non-reasoning"
 GROK_URL = (f"https://aiplatform.googleapis.com/v1/projects/{PROJECT}"
             "/locations/global/endpoints/openapi/chat/completions")
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly",

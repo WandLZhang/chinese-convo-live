@@ -42,7 +42,7 @@ def _token():
 def distill(raw):
     r = requests.post(GROK_URL, timeout=60,
         headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"},
-        json={"model": "xai/grok-4.1-fast-non-reasoning", "temperature": 0.3, "max_tokens": 60,
+        json={"model": "xai/grok-4.20-non-reasoning", "temperature": 0.3, "max_tokens": 60,
               "messages": [{"role": "system", "content": DISTILL_SYS},
                            {"role": "user", "content": raw[:4000]}]})
     r.raise_for_status()

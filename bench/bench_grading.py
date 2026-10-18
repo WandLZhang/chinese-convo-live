@@ -97,7 +97,7 @@ MODELS = {
     "claude-sonnet-4-5": ("claude", "claude-sonnet-4-5@20250929"),
     "claude-haiku-4-5": ("claude", "claude-haiku-4-5@20251001"),
     "gemini-3.5-flash-lite": ("gemini", "gemini-3.5-flash-lite"),
-    "grok-4.1-fast": ("grok", "xai/grok-4.1-fast-non-reasoning"),
+    "grok-4.20": ("grok", "xai/grok-4.20-non-reasoning"),
 }
 
 def grade(model_name, language, question, answer):
