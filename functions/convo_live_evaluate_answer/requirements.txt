@@ -3,3 +3,4 @@ google-cloud-firestore==2.15.0
 google-auth==2.*
 requests==2.*
 flask==3.0.2
+tzdata

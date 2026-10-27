@@ -36,9 +36,10 @@ export function useSrs(language: Language) {
     }
   }, [language])
 
+  // A scheduled word enters Anki learning, so it goes to the front of the queue once it falls due.
   const scheduleWord = useCallback(
     async (word: VocabEntry, minutesFromNow = 5) => {
-      await updateReviewTime(word.id, language, isoMinutesFromNow(minutesFromNow))
+      await updateReviewTime(word.id, language, isoMinutesFromNow(minutesFromNow), true)
       await refresh()
     },
     [language, refresh],
@@ -46,7 +47,7 @@ export function useSrs(language: Language) {
 
   const unmasterWord = useCallback(
     async (word: VocabEntry) => {
-      // Match the old app: unmark, then reschedule 5 minutes out.
+      // Match the old app: unmark, then reschedule 5 minutes out (as a learning word).
       await markWordMastered(word.id, language, false)
       await scheduleWord(word, 5)
     },

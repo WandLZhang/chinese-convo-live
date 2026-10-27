@@ -19,12 +19,14 @@ import type { Language, VocabEntry } from '../types'
 import {
   reviewField,
   masteredField,
-  isDue,
   isNew,
   isScheduled,
   isMastered,
   getReviewDate,
   minutesUntil,
+  pickNext,
+  pickLearnAhead,
+  LEARN_AHEAD_MIN,
 } from './srs'
 
 const COLLECTION = 'vocabulary'
@@ -72,36 +74,54 @@ export interface NextVocabResult {
 }
 
 /**
- * Word selection, ported from the old App.tsx fetchNextVocab:
- * due-first (review time <= now, not mastered), most recently due first -> oldest new word
- * (no review time, not mastered) -> a message about the next scheduled review.
- * Most recently due first brings a failed word (due again in 5-30 min) back as soon as it's
- * due. Oldest-due-first queued it behind every long-overdue word.
+ * Word selection in AnkiDroid's order:
+ *   1) a learning word (new or failed, in its 1-10 minute steps) that has fallen due, earliest first;
+ *   2) review words that are due, oldest first;
+ *   3) the oldest never-reviewed word;
+ *   4) learn-ahead: a learning word due within LEARN_AHEAD_MIN;
+ *   5) a message about the next scheduled review.
+ * Before this, every due word was served most recently due first, so each word passed 3 days
+ * earlier jumped ahead of words that had waited months.
  */
 export async function selectNextVocab(language: Language): Promise<NextVocabResult> {
   const vocabRef = collection(db, COLLECTION)
   const now = Timestamp.now()
   const rf = reviewField(language)
+  const dataOf = (d: QueryDocumentSnapshot) => d.data()
 
-  // 1) Due for review, most recently due first.
-  const dueSnap = await getDocs(
-    query(vocabRef, where(rf, '<=', now), orderBy(rf, 'desc'), limit(50)),
-  )
-  const due = dueSnap.docs.find((d) => isDue(d.data(), language, now.toDate()))
+  // 1-2) Everything due. No cap: the due set is small, and a cap could hide the oldest words.
+  const dueSnap = await getDocs(query(vocabRef, where(rf, '<=', now), orderBy(rf)))
+  const due = pickNext(dueSnap.docs, dataOf, language, now.toDate())
   if (due) {
     const vocab = toEntry(due.id, due.data())
     console.log('[selectNextVocab] due:', vocab)
     return { vocab }
   }
 
-  // 2) Oldest never-reviewed (in this language) word.
+  // 3) Oldest never-reviewed (in this language) word.
   const [fresh] = await findNewVocab(language, 1)
   if (fresh) {
     console.log('[selectNextVocab] new:', fresh)
     return { vocab: fresh }
   }
 
-  // 3) Nothing available now — report time until the next scheduled review.
+  // 4) Learn ahead rather than make you wait out a learning step.
+  const soonSnap = await getDocs(
+    query(
+      vocabRef,
+      where(rf, '>', now),
+      where(rf, '<=', Timestamp.fromMillis(now.toMillis() + LEARN_AHEAD_MIN * 60000)),
+      orderBy(rf),
+    ),
+  )
+  const ahead = pickLearnAhead(soonSnap.docs, dataOf, language, now.toDate())
+  if (ahead) {
+    const vocab = toEntry(ahead.id, ahead.data())
+    console.log('[selectNextVocab] learn ahead:', vocab)
+    return { vocab }
+  }
+
+  // 5) Nothing available now — report time until the next scheduled review.
   const nextSnap = await getDocs(
     query(vocabRef, where(rf, '>', now), orderBy(rf), limit(1)),
   )

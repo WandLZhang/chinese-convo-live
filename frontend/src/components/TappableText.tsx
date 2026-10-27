@@ -4,7 +4,8 @@ import { isCjk, lookupAt, type Lookup } from '../services/dict'
 
 /**
  * Renders text with every CJK character tappable -> dictionary pop-out (jyutping/pinyin + definition,
- * tone-coloured). Optional `onWordTap` fires on any tap (e.g. to flag "had difficulty" on the question).
+ * tone-coloured). Optional `onWordTap(i)` gets the tapped character's index, so the caller can decide
+ * whether the tap counts (the struggle face only rises for a tap on the target word).
  * Used for both the generated question and the graded suggested answer.
  */
 export default function TappableText({
@@ -14,13 +15,13 @@ export default function TappableText({
 }: {
   text: string
   language: Language
-  onWordTap?: () => void
+  onWordTap?: (i: number) => void
 }) {
   const [lookup, setLookup] = useState<Lookup | null>(null)
   const [loading, setLoading] = useState(false)
 
   const handleTap = async (i: number) => {
-    onWordTap?.()
+    onWordTap?.(i)
     setLookup(null)
     setLoading(true)
     try {

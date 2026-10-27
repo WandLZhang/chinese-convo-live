@@ -5,6 +5,7 @@ import TtsButton from './TtsButton'
 import CritiquePanel from './CritiquePanel'
 import TappableText from './TappableText'
 import { translateSentence } from '../services/translate'
+import { tapHitsWord } from '../services/dict'
 
 interface Props {
   turns: Turn[]
@@ -49,8 +50,10 @@ export default function ConversationView({
   }, [])
 
   let lastUserIdx = -1
+  let lastAssistantIdx = -1
   turns.forEach((t, i) => {
     if (t.role === 'user') lastUserIdx = i
+    if (t.role === 'assistant') lastAssistantIdx = i
   })
 
   return (
@@ -62,7 +65,9 @@ export default function ConversationView({
               key={turn.id}
               turn={turn}
               language={language}
-              onDifficulty={onDifficulty}
+              // Only the current question can raise the struggle face; an old bubble's word isn't
+              // the one being graded.
+              onDifficulty={i === lastAssistantIdx ? onDifficulty : undefined}
             />
           )
         }
@@ -97,7 +102,7 @@ function AssistantBubble({
 }: {
   turn: AssistantTurn
   language: Language
-  onDifficulty: () => void
+  onDifficulty?: () => void
 }) {
   const q = turn.question
   const [showTranslation, setShowTranslation] = useState(false)
@@ -105,12 +110,25 @@ function AssistantBubble({
   const [translating, setTranslating] = useState(false)
   const [showContext, setShowContext] = useState(false)
 
+  // The struggle face rises only for a tap on the target word, in either script. Looking up some
+  // other word in the sentence doesn't mean you didn't know the one being drilled.
+  const handleWordTap = (i: number) => {
+    if (!q || !onDifficulty) return
+    tapHitsWord(q.question, i, q.target_word)
+      .then((hit) => {
+        if (hit) onDifficulty()
+      })
+      .catch((err) => console.error('[difficulty] target check failed:', err))
+  }
+
   const handleTranslate = async () => {
     if (!q) return
     if (showTranslation) {
       setShowTranslation(false)
       return
     }
+    // Needing the whole sentence translated counts as struggling with it.
+    onDifficulty?.()
     setShowTranslation(true)
     if (translation) return // cached
     setTranslating(true)
@@ -155,7 +173,7 @@ function AssistantBubble({
       {q ? (
         <div className="assistant-row">
           <div className="message left chinese-text">
-            <TappableText text={q.question} language={language} onWordTap={onDifficulty} />
+            <TappableText text={q.question} language={language} onWordTap={handleWordTap} />
 
             {showTranslation && (
               <div className="bubble-extra">

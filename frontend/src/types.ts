@@ -7,6 +7,17 @@ export interface FsTimestamp {
   nanoseconds?: number
 }
 
+/** A word's Anki SM-2 card for one language, written by the grading function (srs.py). */
+export interface SrsCard {
+  state: 'new' | 'learning' | 'review' | 'relearning'
+  step: number
+  ivl: number // days
+  ease: number
+  reps: number
+  lapses: number
+  last?: FsTimestamp
+}
+
 export interface VocabEntry {
   id: string
   simplified: string // the vocab word (simplified Chinese)
@@ -20,6 +31,9 @@ export interface VocabEntry {
   nextReviewCantonese?: FsTimestamp | null
   mastered_mandarin?: boolean
   mastered_cantonese?: boolean
+  /** Absent on words the old fixed-interval scheduler handled; those count as review cards. */
+  srsMandarin?: SrsCard
+  srsCantonese?: SrsCard
   // Per-language fields are also read dynamically (e.g. `nextReview${Lang}`).
   [key: string]: unknown
 }

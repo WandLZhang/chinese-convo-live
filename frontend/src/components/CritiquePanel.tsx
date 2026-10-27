@@ -4,6 +4,7 @@ import type { AnswerEvaluation } from '../services/scheduler'
 import type { Language } from '../types'
 import Markdown from './Markdown'
 import TappableText from './TappableText'
+import { relativeDue } from '../services/srs'
 
 interface Props {
   evaluation: AnswerEvaluation
@@ -90,7 +91,9 @@ export default function CritiquePanel({
         <div className="critique-footer">
           {nextReview && (
             <label className="critique-review">
-              <span className="critique-label">Next review</span>
+              <span className="critique-label">
+                Next review · {relativeDue(nextReview.toDate(), new Date())}
+              </span>
               <input type="datetime-local" value={inputValue} onChange={handleTimeChange} />
             </label>
           )}

@@ -21,6 +21,14 @@ function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, language])
 
+  // Each question starts with the struggle face off. Sending clears it already; this also covers
+  // Next, Mastered, Shuffle and Practice, which move on without an answer.
+  let latestQuestionId: string | null = null
+  for (const t of convo.turns) if (t.role === 'assistant') latestQuestionId = t.id
+  useEffect(() => {
+    setHadDifficulty(false)
+  }, [latestQuestionId])
+
   if (loading) {
     return (
       <div className="app-frame center">

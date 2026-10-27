@@ -20,6 +20,7 @@ export interface FsTimestampData {
 export interface EvaluationResult {
   success?: boolean
   evaluation: AnswerEvaluation
+  grade?: 'again' | 'hard' | 'good' // the Anki button the reply mapped to
   nextReview: FsTimestampData
 }
 
@@ -80,12 +81,18 @@ export async function markWordMastered(
   return response.json()
 }
 
+/**
+ * Set a word's due time. `learning: true` also puts it into Anki learning step 0, so it goes to the
+ * front of the queue when it falls due (drawer "Schedule", "Unmark"). Without it only the due time
+ * changes, like Anki's "Set due date" (the critique panel's date picker).
+ */
 export async function updateReviewTime(
   docId: string,
   language: Language,
   newReviewTime: string,
+  learning = false,
 ): Promise<{ nextReview: FsTimestampData }> {
-  const body = { docId, language, newReviewTime }
+  const body = { docId, language, newReviewTime, learning }
   console.log('[updateReviewTime] request payload:', body)
   const response = await fetch(UPDATE_TIME_URL, {
     method: 'POST',

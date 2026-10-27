@@ -5,9 +5,11 @@ import google.auth
 import google.auth.transport.requests
 import requests
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 import json
 from google.protobuf.timestamp_pb2 import Timestamp
+
+import srs
 
 # Initialize clients
 db = firestore.Client()
@@ -34,19 +36,6 @@ def _llm_grade(system_prompt: str, user_content: str) -> dict:
     if resp.status_code != 200:
         raise RuntimeError(f"{GRADE_MODEL} returned {resp.status_code}: {resp.text}")
     return json.loads(resp.json()["choices"][0]["message"]["content"])
-
-# Scheduling intervals in minutes
-INTERVALS = {
-    "DIFFICULTY": {
-        "IMMEDIATE": 5,      # For had_difficulty=True
-        "SHORT": 15,        # For non-fluent usage
-        "MEDIUM": 30        # For basic correct usage
-    },
-    "SUCCESS": {
-        "INITIAL": [4320],    # 3d for first success
-        "SUBSEQUENT": [21600, 86400]  # 15d, 60d for subsequent successes
-    }
-}
 
 def grade_answer(user_answer: str, vocab_word: str, language: str, vocab_entry: dict, generated_question: str = None, requires_alternative: bool = False, target_word: str = None) -> dict:
     """Use GRADE_MODEL to evaluate the answer and provide feedback.
@@ -111,52 +100,16 @@ Return ONLY a JSON object with these fields:
         print(f"Error: {str(e)}")
         raise
 
-def calculate_next_review(
-    current_data: dict,
-    language: str,
-    had_difficulty: bool,
-    evaluation: dict,
-    now: datetime
-) -> datetime:
-    """Calculate the next review time based on various factors"""
-    
-    # For any difficulty or non-fluent usage, use short intervals
-    if had_difficulty:
-        print("Had difficulty - using IMMEDIATE interval (5 minutes)")
-        return now + timedelta(minutes=INTERVALS["DIFFICULTY"]["IMMEDIATE"])
-    
-    if not evaluation['fluent']:
-        print("Not fluent - using SHORT interval (15 minutes)")
-        return now + timedelta(minutes=INTERVALS["DIFFICULTY"]["SHORT"])
-    
-    if not evaluation['meaningful_usage']:
-        print("Not meaningful usage - using MEDIUM interval (30 minutes)")
-        return now + timedelta(minutes=INTERVALS["DIFFICULTY"]["MEDIUM"])
-    
-    # For successful, fluent usage
-    next_review_field = f'nextReview{language.capitalize()}'
-    current_review = current_data.get(next_review_field)
-    
-    # If this is the first successful review or there was any difficulty recently
-    if not current_review or had_difficulty or not evaluation['fluent'] or not evaluation['meaningful_usage']:
-        print("First success or recent difficulty - using INITIAL interval (3 days)")
-        return now + timedelta(minutes=INTERVALS["SUCCESS"]["INITIAL"][0])
-    
-    # For subsequent successful reviews
-    try:
-        # Convert ISO string to datetime if needed
-        if isinstance(current_review, str):
-            current_review = datetime.fromisoformat(current_review)
-        
-        # Calculate time difference in minutes
-        current_diff = (now - current_review.replace(tzinfo=None)).total_seconds() / 60
-        intervals = INTERVALS["SUCCESS"]["INITIAL"] + INTERVALS["SUCCESS"]["SUBSEQUENT"]
-        next_interval = next((i for i in intervals if i > current_diff), intervals[-1])
-        print(f"Subsequent success - using interval: {next_interval} minutes")
-        return now + timedelta(minutes=next_interval)
-    except Exception as e:
-        print(f"Error calculating interval: {str(e)}, using INITIAL interval")
-        return now + timedelta(minutes=INTERVALS["SUCCESS"]["INITIAL"][0])
+def current_card(raw: dict, language: str) -> dict:
+    """The word's SRS card for this language: stored, legacy (scheduled by the old fixed-interval
+    code, so a due time but no card), or new."""
+    card = raw.get(f'srs{language.capitalize()}')
+    if isinstance(card, dict):
+        return card
+    if raw.get(f'nextReview{language.capitalize()}') is not None:
+        return srs.legacy_card()
+    return srs.new_card()
+
 
 @functions_framework.http
 def evaluate_answer(request):
@@ -192,13 +145,20 @@ def evaluate_answer(request):
             print(f"Document not found: {doc_id}")
             return (jsonify({'error': 'Document not found'}), 404, headers)
         
-        vocab_data = doc.to_dict()
+        raw = doc.to_dict()
+        next_review_field = f'nextReview{language.capitalize()}'
+        srs_field = f'srs{language.capitalize()}'
+        due_before = raw.get(next_review_field)  # aware UTC datetime, or None
+        card = current_card(raw, language)
+
+        vocab_data = dict(raw)
         # Convert Firestore timestamps to ISO format strings
         timestamp_fields = ['timestamp', 'nextReviewMandarin', 'nextReviewCantonese']
         for field in timestamp_fields:
             if field in vocab_data and vocab_data[field]:
                 vocab_data[field] = vocab_data[field].isoformat() if hasattr(vocab_data[field], 'isoformat') else None
-        print(f"Vocabulary Data: {json.dumps(vocab_data, indent=2)}")
+        # default=str: the srs maps hold a datetime (`last`) that json can't encode on its own.
+        print(f"Vocabulary Data: {json.dumps(vocab_data, indent=2, default=str, ensure_ascii=False)}")
         
         # Get the generated question and new parameters from the request
         generated_question = request_json.get('generatedQuestion')
@@ -220,37 +180,28 @@ def evaluate_answer(request):
             target_word  # NEW: pass through
         )
         
-        # Calculate next review time
-        now = datetime.utcnow().replace(tzinfo=None)
-        print("\n=== Calculating Next Review ===")
-        next_review = calculate_next_review(
-            vocab_data,
-            language,
-            had_difficulty,
-            evaluation,
-            now
-        )
-        print(f"Next Review Time: {next_review.isoformat()}")
-        
-        # Update the document with UTC time
-        next_review_field = f'nextReview{language.capitalize()}'
-        doc_ref.update({
-            next_review_field: next_review.replace(tzinfo=None)
-        })
-        
-        # Convert datetime to Timestamp
+        # Schedule it the way Anki would (srs.py: SM-2, default deck options).
+        now = datetime.now(timezone.utc)
+        grade = srs.grade_from(evaluation, had_difficulty)
+        new_card, next_review = srs.schedule(card, grade, now, due_before)
+        print("\n=== Scheduling ===")
+        print(json.dumps({'grade': grade, 'had_difficulty': had_difficulty, 'due_before': due_before,
+                          'card_before': card, 'card_after': new_card, 'next_review': next_review},
+                         indent=2, default=str, ensure_ascii=False))
+
+        doc_ref.update({next_review_field: next_review, srs_field: new_card})
+
         timestamp = Timestamp()
         timestamp.FromDatetime(next_review)
-        
-        # Prepare response with raw timestamp data
+
         response = {
             'success': True,
             'evaluation': evaluation,
+            'grade': grade,
             'nextReview': {
                 'seconds': timestamp.seconds,
                 'nanoseconds': timestamp.nanos
             },
-            'intervals': INTERVALS  # Include available intervals for frontend dropdown
         }
         
         return (jsonify(response), 200, headers)
@@ -279,22 +230,33 @@ def update_review_time(request):
 
     try:
         request_json = request.get_json()
+        print(f"Request JSON: {json.dumps(request_json, ensure_ascii=False)}")
         doc_id = request_json.get('docId')
         language = request_json.get('language')
         new_review_time = request_json.get('newReviewTime')
-        
+        learning = bool(request_json.get('learning', False))
+
         if not all([doc_id, language, new_review_time]):
             return (jsonify({'error': 'Missing required fields'}), 400, headers)
-        
-        # Parse the ISO string and preserve exact time
+
+        # Parse the ISO string and preserve exact time. The client sends UTC without an offset.
         review_time = datetime.fromisoformat(new_review_time)
-        
-        # Update the document with the exact time
+        if review_time.tzinfo is None:
+            review_time = review_time.replace(tzinfo=timezone.utc)
+
         doc_ref = db.collection('vocabulary').document(doc_id)
         next_review_field = f'nextReview{language.capitalize()}'
-        doc_ref.update({
-            next_review_field: review_time
-        })
+        update = {next_review_field: review_time}
+        # learning=True (drawer "Schedule" and "Unmark") puts the word into learning step 0, so it
+        # comes up at the front of the queue when it falls due. Without it (the date picker) only the
+        # due time changes, like Anki's "Set due date".
+        if learning:
+            srs_field = f'srs{language.capitalize()}'
+            snap = doc_ref.get()
+            existing = (snap.to_dict() or {}).get(srs_field) if snap.exists else None
+            update[srs_field] = srs.learning_card(existing if isinstance(existing, dict) else None)
+        print(f"Update: {json.dumps(update, default=str, ensure_ascii=False)}")
+        doc_ref.update(update)
 
         # Convert datetime to Timestamp for response
         timestamp = Timestamp()

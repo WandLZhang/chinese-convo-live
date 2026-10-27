@@ -114,6 +114,43 @@ function readingOf(e: RawEntry, language: Language): ReadingSeg[] {
     .map((s) => ({ text: isPinyin ? pyDiacritic(s) : s, color: toneColor(s) }))
 }
 
+/** Same word in either script. The blob keys each word under both its traditional and simplified
+ *  headword with identical entries (尴尬 and 尷尬 both give "awkward; embarrassed"). */
+function sameWord(a: RawEntry[] | undefined, b: RawEntry[] | undefined): boolean {
+  if (!a?.length || !b?.length) return false
+  const key = (e: RawEntry) => `${e.py}|${e.jy}|${(e.d || []).join(';')}`
+  const keys = new Set(b.map(key))
+  return a.some((e) => keys.has(key(e)))
+}
+
+/**
+ * Whether character `i` of `sentence` sits inside an occurrence of `target`, in either script.
+ * A Cantonese question is written in traditional characters while the vocab word is simplified, and
+ * script conversion keeps the length, so this checks each window of target.length that covers `i`.
+ */
+export function hitsWord(
+  sentence: string,
+  i: number,
+  target: string,
+  dict: Record<string, RawEntry[]>,
+): boolean {
+  const n = target.length
+  if (!n || i < 0 || i >= sentence.length) return false
+  for (let j = Math.max(0, i - n + 1); j <= i && j + n <= sentence.length; j++) {
+    const w = sentence.slice(j, j + n)
+    if (w === target || sameWord(dict[w], dict[target])) return true
+  }
+  return false
+}
+
+/** Did a tap on character `i` land on the target word? Drives the struggle face. */
+export async function tapHitsWord(sentence: string, i: number, target: string): Promise<boolean> {
+  if (!target) return false
+  return hitsWord(sentence, i, target, await loadDict())
+}
+
+export type { RawEntry }
+
 const MAX_WORD = 6 // forward-maximum-matching window
 
 /**
