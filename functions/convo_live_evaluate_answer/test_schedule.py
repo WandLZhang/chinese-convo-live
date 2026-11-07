@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 import srs
-from srs import AGAIN, GOOD, HARD, TZ, grade_from, schedule
+from srs import AGAIN, EASY, GOOD, HARD, TZ, grade_from, schedule
 
 UTC = timezone.utc
 
@@ -26,8 +26,9 @@ class GradeFrom(unittest.TestCase):
     def test_grammar_slip_with_the_word_right_is_hard(self):
         self.assertEqual(grade_from({"fluent": False, "meaningful_usage": True}, False), HARD)
 
-    def test_both_right_is_good(self):
-        self.assertEqual(grade_from({"fluent": True, "meaningful_usage": True}, False), GOOD)
+    def test_both_right_is_easy(self):
+        # A fluent sentence of your own that uses the word right is Anki's Easy, not Good.
+        self.assertEqual(grade_from({"fluent": True, "meaningful_usage": True}, False), EASY)
 
 
 class Learning(unittest.TestCase):
@@ -109,13 +110,55 @@ class Review(unittest.TestCase):
         self.assertEqual(card["ease"], srs.EASE_FLOOR)
 
 
+class Easy(unittest.TestCase):
+    """What a fluent reply that uses the word right gets (grade_from maps it to Easy)."""
+
+    def test_new_word_skips_the_short_steps_and_graduates_at_4_days(self):
+        card, due = schedule(srs.new_card(), EASY, et(2026, 11, 7, 7), None)
+        self.assertEqual((card["state"], card["ivl"], card["ease"]), ("review", 4, 2.5))
+        self.assertEqual(due, et(2026, 11, 11, 4))
+
+    def test_on_time_easy_grows_4_13_45_164(self):
+        card, due = schedule(srs.new_card(), EASY, et(2026, 11, 7, 7), None)
+        seen = [card["ivl"]]
+        for _ in range(3):
+            card, due = schedule(card, EASY, due, due)  # answered the moment it falls due
+            seen.append(card["ivl"])
+        self.assertEqual(seen, [4, 13, 45, 164])
+        self.assertEqual(card["ease"], 2.95)
+
+    def test_a_due_date_pushed_out_by_hand_still_earns_the_days_that_went_by(self):
+        # 档次 on 2026-11-07: graded at ivl 3, then moved by hand to 11-22. Answered right that day,
+        # it grows from the 15 days that passed: (3 + 12) * 2.5 * 1.3 = 48.75 -> 49.
+        card = {**srs.new_card(), "state": "review", "ivl": 3, "ease": 2.5, "last": et(2026, 11, 7, 6, 15)}
+        card, _ = schedule(card, EASY, et(2026, 11, 22, 8), et(2026, 11, 22, 4))
+        self.assertEqual(card["ivl"], 49)
+
+    def test_reviewing_early_gets_no_extra_credit(self):
+        # Practiced 2 days into a 13-day interval: plain growth from 13, no lateness.
+        card = {**srs.new_card(), "state": "review", "ivl": 13, "ease": 2.65, "last": et(2026, 11, 7, 7)}
+        card, _ = schedule(card, EASY, et(2026, 11, 9, 7), et(2026, 11, 20, 4))
+        self.assertEqual(card["ivl"], 45)
+
+    def test_easy_from_relearning_returns_a_day_later_than_good(self):
+        card = {**srs.new_card(), "state": "relearning", "ivl": 1, "ease": 2.3}
+        card, due = schedule(card, EASY, et(2026, 11, 7, 9), None)
+        self.assertEqual((card["state"], card["ivl"]), ("review", 2))
+        self.assertEqual(due, et(2026, 11, 9, 4))
+
+
 class Legacy(unittest.TestCase):
-    def test_legacy_word_268_days_overdue_gets_3_days_not_hundreds(self):
+    def test_legacy_word_268_days_overdue_gets_13_days_not_hundreds(self):
+        # From the assumed 4-day interval, with no lateness credit: 4 * 2.5 * 1.3 = 13.
         now = et(2026, 10, 27, 7)
-        card, due = schedule(srs.legacy_card(), GOOD, now, now - timedelta(days=268))
-        self.assertEqual(card["ivl"], 3)
+        card, due = schedule(srs.legacy_card(), EASY, now, now - timedelta(days=268))
+        self.assertEqual(card["ivl"], 13)
         self.assertNotIn("legacy", card)
-        self.assertEqual(due, et(2026, 10, 30, 4))
+        self.assertEqual(due, et(2026, 11, 9, 4))
+
+    def test_legacy_word_with_a_grammar_slip_gets_5_days(self):
+        card, _ = schedule(srs.legacy_card(), HARD, et(2026, 11, 7, 7), et(2026, 8, 5, 4))
+        self.assertEqual(card["ivl"], 5)
 
     def test_learning_card_restarts_at_step_0_and_keeps_history(self):
         card = srs.learning_card({**srs.legacy_card(), "ease": 2.1, "lapses": 2, "reps": 7})
@@ -140,7 +183,7 @@ class DaylightSaving(unittest.TestCase):
 class Validation(unittest.TestCase):
     def test_unknown_grade_raises(self):
         with self.assertRaises(ValueError):
-            schedule(srs.new_card(), "easy", et(2026, 10, 27, 7), None)
+            schedule(srs.new_card(), "perfect", et(2026, 10, 27, 7), None)
 
 
 if __name__ == "__main__":

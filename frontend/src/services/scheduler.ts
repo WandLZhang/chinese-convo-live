@@ -20,7 +20,7 @@ export interface FsTimestampData {
 export interface EvaluationResult {
   success?: boolean
   evaluation: AnswerEvaluation
-  grade?: 'again' | 'hard' | 'good' // the Anki button the reply mapped to
+  grade?: 'again' | 'hard' | 'good' | 'easy' // the Anki button the reply mapped to
   nextReview: FsTimestampData
 }
 

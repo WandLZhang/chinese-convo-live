@@ -22,15 +22,22 @@ STARTING_EASE = 2.5
 EASE_FLOOR = 1.3
 EASE_AGAIN = -0.20
 EASE_HARD = -0.15
+EASE_EASY = 0.15
 HARD_FACTOR = 1.2
+EASY_IVL_DAYS = 4           # Anki: "Easy interval" for a new word answered Easy
+EASY_BONUS = 1.3
 MAX_IVL_DAYS = 36500
 DAY_STARTS_HOUR = 4         # Anki: "Next day starts at" 4 AM
+
+# Assumed interval for a word the old fixed-interval code scheduled. Willis moved every correct
+# backlog word to 12-20 days by hand on 2026-11-07; from 4 days, an Easy answer lands on 13.
+LEGACY_IVL_DAYS = 4
 
 # The owner's clock. A review card falls due at 4 AM local time on its due day, not at the minute it
 # was graded, so a word graded at 9 PM is ready for the next morning's session.
 TZ = ZoneInfo(os.getenv("SRS_TZ", "America/New_York"))
 
-AGAIN, HARD, GOOD = "again", "hard", "good"
+AGAIN, HARD, GOOD, EASY = "again", "hard", "good", "easy"
 
 
 def grade_from(evaluation: dict, had_difficulty: bool) -> str:
@@ -38,13 +45,15 @@ def grade_from(evaluation: dict, had_difficulty: bool) -> str:
 
     Again: the learner flagged difficulty (tapped the target word, revealed the translation, or pressed
     the struggle face), or used the target word wrongly. Hard: the target word is right but the grammar
-    elsewhere is off; the slip isn't about the word being drilled. Good: both right.
+    elsewhere is off; the slip isn't about the word being drilled. Easy: both right. Producing the word
+    correctly in a fluent sentence of your own is a stronger test than recalling a flashcard, and
+    mapping it to Good brought words back in 10 minutes, then 1 day, then 3.
     """
     if had_difficulty or not evaluation.get("meaningful_usage"):
         return AGAIN
     if not evaluation.get("fluent"):
         return HARD
-    return GOOD
+    return EASY
 
 
 def day_of(t: datetime) -> date:
@@ -63,9 +72,9 @@ def new_card() -> dict:
 
 def legacy_card() -> dict:
     """A word the old fixed-interval code scheduled. Its history can't be trusted, so it starts as a
-    one-day review card, and its first grading gets no credit for lateness (see schedule)."""
-    return {"state": "review", "step": 0, "ivl": 1, "ease": STARTING_EASE, "reps": 0, "lapses": 0,
-            "legacy": True}
+    LEGACY_IVL_DAYS review card, and its first grading gets no credit for lateness (see schedule)."""
+    return {"state": "review", "step": 0, "ivl": LEGACY_IVL_DAYS, "ease": STARTING_EASE, "reps": 0,
+            "lapses": 0, "legacy": True}
 
 
 def learning_card(card: dict | None) -> dict:
@@ -102,10 +111,11 @@ def schedule(card: dict, grade: str, now: datetime, due_before: datetime | None)
 
     `due_before` is the word's due time before this answer; review cards use it for lateness.
     """
-    if grade not in (AGAIN, HARD, GOOD):
+    if grade not in (AGAIN, HARD, GOOD, EASY):
         raise ValueError(f"unknown grade {grade!r}")
     c = dict(card)
     legacy = bool(c.pop("legacy", False))
+    prev_last = c.get("last")
     c["reps"] = c.get("reps", 0) + 1
     c["last"] = now
     state = c.get("state", "new")
@@ -119,6 +129,9 @@ def schedule(card: dict, grade: str, now: datetime, due_before: datetime | None)
         if grade == HARD:
             c.update(state="learning", step=step)
             return c, now + timedelta(minutes=_hard_delay_min(steps, step))
+        if grade == EASY:  # Anki: Easy skips the remaining steps and graduates at the easy interval
+            c.update(state="review", step=0, ivl=EASY_IVL_DAYS)
+            return c, _review_due(now, EASY_IVL_DAYS)
         if step + 1 < len(steps):
             c.update(state="learning", step=step + 1)
             return c, now + timedelta(minutes=steps[step + 1])
@@ -133,10 +146,11 @@ def schedule(card: dict, grade: str, now: datetime, due_before: datetime | None)
             return c, now + timedelta(minutes=steps[0])
         if grade == HARD:
             return c, now + timedelta(minutes=_hard_delay_min(steps, step))
-        if step + 1 < len(steps):
+        if grade != EASY and step + 1 < len(steps):
             c["step"] = step + 1
             return c, now + timedelta(minutes=steps[step + 1])
-        ivl = max(1, c.get("ivl", LAPSE_IVL_DAYS))
+        # Back to review at the lapse interval; Easy adds a day over Good.
+        ivl = max(1, c.get("ivl", LAPSE_IVL_DAYS)) + (1 if grade == EASY else 0)
         c.update(state="review", step=0, ivl=ivl)
         return c, _review_due(now, ivl)
 
@@ -148,12 +162,24 @@ def schedule(card: dict, grade: str, now: datetime, due_before: datetime | None)
                  ease=_ease(ease + EASE_AGAIN), lapses=c.get("lapses", 0) + 1)
         return c, now + timedelta(minutes=RELEARNING_STEPS_MIN[0])
 
-    late = 0 if legacy or due_before is None else max(0, (day_of(now) - day_of(due_before)).days)
+    # Lateness: days past due, or days beyond the interval since the last review, whichever is more.
+    # The second covers a due date pushed out with the date picker. That moves only the due time, so
+    # a word moved from 3 to 15 days would otherwise grow from 3 even though 15 days went by.
+    late = 0
+    if not legacy:
+        if due_before is not None:
+            late = max(late, (day_of(now) - day_of(due_before)).days)
+        if prev_last is not None:
+            late = max(late, (day_of(now) - day_of(prev_last)).days - ivl)
     hard_ivl = max(ivl + 1, (ivl + late / 4) * HARD_FACTOR)
+    good_ivl = max(hard_ivl + 1, (ivl + late / 2) * ease)
     if grade == HARD:
         new_ivl = _round_days(hard_ivl)
         c["ease"] = _ease(ease + EASE_HARD)
+    elif grade == EASY:
+        new_ivl = _round_days(max(good_ivl + 1, (ivl + late) * ease * EASY_BONUS))
+        c["ease"] = _ease(ease + EASE_EASY)
     else:
-        new_ivl = _round_days(max(hard_ivl + 1, (ivl + late / 2) * ease))
+        new_ivl = _round_days(good_ivl)
     c.update(state="review", step=0, ivl=new_ivl)
     return c, _review_due(now, new_ivl)
