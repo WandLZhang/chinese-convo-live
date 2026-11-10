@@ -74,6 +74,7 @@ export default function WordListDrawer({ language, onClose, onPractice }: Props)
         <Section
           title="New"
           items={lists.new}
+          total={lists.newTotal}
           expanded={expanded.new}
           onToggle={() => toggle('new')}
           onPractice={practice}
@@ -146,6 +147,7 @@ export default function WordListDrawer({ language, onClose, onPractice }: Props)
 function Section({
   title,
   items,
+  total,
   expanded,
   onToggle,
   onPractice,
@@ -153,6 +155,8 @@ function Section({
 }: {
   title: string
   items: VocabEntry[]
+  /** The header count when the section only loads part of the list (New loads 50). */
+  total?: number
   expanded: boolean
   onToggle: () => void
   onPractice: (w: VocabEntry) => void
@@ -162,7 +166,7 @@ function Section({
   return (
     <div className="wl-section">
       <h3>
-        {title} <span className="wl-count">{items.length}</span>
+        {title} <span className="wl-count">{total ?? items.length}</span>
       </h3>
       {items.length === 0 && <p className="muted">None</p>}
       {shown.map((w) => (

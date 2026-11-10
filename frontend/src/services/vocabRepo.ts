@@ -28,6 +28,7 @@ import {
   pickLearnAhead,
   LEARN_AHEAD_MIN,
   splitByDay,
+  hasReview,
 } from './srs'
 
 const COLLECTION = 'vocabulary'
@@ -165,7 +166,8 @@ export async function selectRandomVocab(): Promise<VocabEntry | null> {
 export interface WordLists {
   incoming: VocabEntry[] // slated for today, overdue included, in the order Next serves them
   scheduled: VocabEntry[] // future days, earliest first
-  new: VocabEntry[]
+  new: VocabEntry[] // the next 50 new words, oldest first
+  newTotal: number // every new word left, not just the 50 loaded
   mastered: VocabEntry[]
 }
 
@@ -191,7 +193,14 @@ export async function fetchWordLists(language: Language): Promise<WordLists> {
 
   const fresh = await findNewVocab(language, 50)
 
-  const lists = { incoming, scheduled, new: fresh, mastered }
+  // Every new word left, for the section's count. Firestore can't count docs MISSING a field, so
+  // count the rest and subtract: every doc with a review time (orderBy(rf) returns exactly the docs
+  // that have the field, null included), plus mastered docs that never got one.
+  const total = (await getCountFromServer(vocabRef)).data().count
+  const masteredNoReview = masteredSnap.docs.filter((d) => !hasReview(d.data(), language)).length
+  const newTotal = total - scheduledSnap.size - masteredNoReview
+
+  const lists = { incoming, scheduled, new: fresh, newTotal, mastered }
   console.log('[fetchWordLists]', language, lists)
   return lists
 }
