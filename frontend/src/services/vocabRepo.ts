@@ -27,6 +27,7 @@ import {
   pickNext,
   pickLearnAhead,
   LEARN_AHEAD_MIN,
+  splitByDay,
 } from './srs'
 
 const COLLECTION = 'vocabulary'
@@ -162,7 +163,8 @@ export async function selectRandomVocab(): Promise<VocabEntry | null> {
 }
 
 export interface WordLists {
-  scheduled: VocabEntry[]
+  incoming: VocabEntry[] // slated for today, overdue included, in the order Next serves them
+  scheduled: VocabEntry[] // future days, earliest first
   new: VocabEntry[]
   mastered: VocabEntry[]
 }
@@ -172,11 +174,12 @@ export async function fetchWordLists(language: Language): Promise<WordLists> {
   const rf = reviewField(language)
   const mf = masteredField(language)
 
-  // Every word with a review time, earliest first. No limit: it only grows as words get reviewed.
+  // Every word with a review time. No limit: it only grows as words get reviewed.
   const scheduledSnap = await getDocs(query(vocabRef, orderBy(rf)))
-  const scheduled = scheduledSnap.docs
+  const dated = scheduledSnap.docs
     .filter((d) => isScheduled(d.data(), language))
     .map((d) => toEntry(d.id, d.data()))
+  const { incoming, later: scheduled } = splitByDay(dated, (e) => e, language, new Date())
 
   // Equality filter only, newest first sorted here: adding orderBy('timestamp') to the query
   // needs a composite index, and without one Firestore rejected it and blanked the drawer.
@@ -188,7 +191,7 @@ export async function fetchWordLists(language: Language): Promise<WordLists> {
 
   const fresh = await findNewVocab(language, 50)
 
-  const lists = { scheduled, new: fresh, mastered }
+  const lists = { incoming, scheduled, new: fresh, mastered }
   console.log('[fetchWordLists]', language, lists)
   return lists
 }

@@ -118,6 +118,52 @@ export function pickLearnAhead<T>(
   )
 }
 
+/** When the Anki day containing `t` began: DAY_STARTS_HOUR local time, on or before `t`. */
+export function ankiDayStart(t: Date): Date {
+  const shifted = new Date(t.getTime() - DAY_STARTS_HOUR * 3600000)
+  return new Date(shifted.getFullYear(), shifted.getMonth(), shifted.getDate(), DAY_STARTS_HOUR)
+}
+
+/** When the next Anki day begins (tomorrow's DAY_STARTS_HOUR, local time, DST-safe). */
+export function nextAnkiDayStart(t: Date): Date {
+  const s = ankiDayStart(t)
+  return new Date(s.getFullYear(), s.getMonth(), s.getDate() + 1, DAY_STARTS_HOUR)
+}
+
+/**
+ * Split the dated words for the word list. `incoming` is everything slated for today: due before the
+ * next day starts, overdue words included, in the order Next serves them (due learning words, then
+ * due reviews oldest first, then whatever falls due later today). `later` is every future day,
+ * earliest first, then any word whose review time is present but empty. Mastered words are skipped.
+ */
+export function splitByDay<T>(
+  docs: T[],
+  dataOf: (d: T) => Data,
+  language: Language,
+  now: Date,
+): { incoming: T[]; later: T[] } {
+  const end = nextAnkiDayStart(now).getTime()
+  const due = (d: T) => getReviewDate(dataOf(d), language)?.getTime() ?? 0
+  const incoming: T[] = []
+  const later: T[] = []
+  const undated: T[] = []
+  for (const d of docs) {
+    const data = dataOf(d)
+    if (isMastered(data, language)) continue
+    const t = getReviewDate(data, language)?.getTime()
+    if (t === undefined) {
+      if (hasReview(data, language)) undated.push(d)
+      continue
+    }
+    ;(t < end ? incoming : later).push(d)
+  }
+  const rank = (d: T) =>
+    due(d) <= now.getTime() ? (isLearning(dataOf(d), language) ? 0 : 1) : 2
+  incoming.sort((a, b) => rank(a) - rank(b) || due(a) - due(b))
+  later.sort((a, b) => due(a) - due(b))
+  return { incoming, later: [...later, ...undated] }
+}
+
 /** The Anki day a moment falls on (local calendar day, starting at DAY_STARTS_HOUR), as a day count. */
 function ankiDay(t: Date): number {
   const shifted = new Date(t.getTime() - DAY_STARTS_HOUR * 3600000)

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Language, VocabEntry } from '../types'
 import { useSrs } from '../hooks/useSrs'
-import { getReviewDate } from '../services/srs'
+import { ankiDayStart, getReviewDate, relativeDue } from '../services/srs'
 
 interface Props {
   language: Language
@@ -9,11 +9,21 @@ interface Props {
   onPractice: (word: VocabEntry) => void
 }
 
-type SectionKey = 'scheduled' | 'new' | 'mastered'
+type SectionKey = 'incoming' | 'scheduled' | 'new' | 'mastered'
+
+/** "Nov 20", with the year only when it isn't this year ("Mar 21, 2027"). */
+function shortDate(d: Date, now: Date): string {
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  })
+}
 
 export default function WordListDrawer({ language, onClose, onPractice }: Props) {
   const { lists, loading, error, refresh, scheduleWord, unmasterWord } = useSrs(language)
   const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
+    incoming: false,
     scheduled: false,
     new: false,
     mastered: false,
@@ -29,6 +39,7 @@ export default function WordListDrawer({ language, onClose, onPractice }: Props)
   }
   const toggle = (k: SectionKey) => setExpanded((e) => ({ ...e, [k]: !e[k] }))
   const now = new Date()
+  const todayStart = ankiDayStart(now)
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -42,34 +53,21 @@ export default function WordListDrawer({ language, onClose, onPractice }: Props)
         {loading && <p className="muted drawer-loading">Loading…</p>}
         {error && <p className="error drawer-loading">Couldn't load the word list: {error}</p>}
 
+        {/* Slated for today (until the 4 AM day boundary), overdue included, in the order Next
+            serves them. */}
         <Section
-          title="Scheduled"
-          items={lists.scheduled}
-          expanded={expanded.scheduled}
-          onToggle={() => toggle('scheduled')}
+          title="Incoming"
+          items={lists.incoming}
+          expanded={expanded.incoming}
+          onToggle={() => toggle('incoming')}
           onPractice={practice}
           renderMeta={(w) => {
             const d = getReviewDate(w, language)
-            if (!d) {
-              return (
-                <button
-                  className="link-btn"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void scheduleWord(w)
-                  }}
-                >
-                  Schedule
-                </button>
-              )
+            if (!d) return null
+            if (d < todayStart) {
+              return <span className="meta overdue">Overdue · {shortDate(d, now)}</span>
             }
-            const overdue = d < now
-            return (
-              <span className={overdue ? 'meta overdue' : 'meta'}>
-                {overdue ? 'Overdue · ' : ''}
-                {d.toLocaleString()}
-              </span>
-            )
+            return <span className="meta">{d <= now ? 'Due now' : relativeDue(d, now)}</span>
           }}
         />
 
@@ -109,6 +107,36 @@ export default function WordListDrawer({ language, onClose, onPractice }: Props)
               Unmark
             </button>
           )}
+        />
+
+        {/* Future days, earliest first. */}
+        <Section
+          title="Scheduled"
+          items={lists.scheduled}
+          expanded={expanded.scheduled}
+          onToggle={() => toggle('scheduled')}
+          onPractice={practice}
+          renderMeta={(w) => {
+            const d = getReviewDate(w, language)
+            if (!d) {
+              return (
+                <button
+                  className="link-btn"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void scheduleWord(w)
+                  }}
+                >
+                  Schedule
+                </button>
+              )
+            }
+            return (
+              <span className="meta">
+                {shortDate(d, now)} · {relativeDue(d, now)}
+              </span>
+            )
+          }}
         />
       </div>
     </div>

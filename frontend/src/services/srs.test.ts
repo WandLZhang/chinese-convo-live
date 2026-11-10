@@ -13,6 +13,9 @@ import {
   pickNext,
   pickLearnAhead,
   relativeDue,
+  splitByDay,
+  ankiDayStart,
+  nextAnkiDayStart,
 } from './srs'
 
 const ts = (d: Date) => ({ toDate: () => d })
@@ -180,5 +183,41 @@ describe('relativeDue (local time, day starts at 4 AM)', () => {
   it('says "now" for a time already past', () => {
     const now = new Date(2026, 9, 27, 7, 0)
     expect(relativeDue(new Date(2026, 9, 27, 6, 0), now)).toBe('now')
+  })
+})
+
+describe('splitByDay (word list: Incoming today, Scheduled later)', () => {
+  const now = new Date(2026, 10, 9, 19, 0) // Mon Nov 9, 7 PM local
+  const at = (d: Date, card?: Record<string, unknown>) => ({
+    nextReviewCantonese: ts(d),
+    ...(card ? { srsCantonese: card } : {}),
+  })
+  const docs: Doc[] = [
+    { id: 'tomorrow-4am', data: at(new Date(2026, 10, 10, 4)) },
+    { id: 'overdue-review', data: at(new Date(2026, 9, 14, 4)) },
+    { id: 'later-tonight', data: at(new Date(2026, 10, 9, 21), { state: 'learning' }) },
+    { id: 'before-4am', data: at(new Date(2026, 10, 10, 3, 30), { state: 'learning' }) },
+    { id: 'due-learning', data: at(new Date(2026, 10, 9, 18, 50), { state: 'relearning' }) },
+    { id: 'march', data: at(new Date(2027, 2, 21, 4)) },
+    { id: 'undated', data: { nextReviewCantonese: null } },
+    { id: 'mastered', data: { ...at(new Date(2026, 9, 1)), mastered_cantonese: true } },
+  ]
+  const { incoming, later } = splitByDay(docs, dataOf, 'cantonese', now)
+
+  it('puts everything due before tomorrow 4 AM in Incoming, in the order Next serves it', () => {
+    expect(incoming.map((d) => d.id)).toEqual(['due-learning', 'overdue-review', 'later-tonight', 'before-4am'])
+  })
+
+  it('puts future days in Scheduled, earliest first, with undated words last', () => {
+    expect(later.map((d) => d.id)).toEqual(['tomorrow-4am', 'march', 'undated'])
+  })
+
+  it('leaves mastered words out of both', () => {
+    expect([...incoming, ...later].some((d) => d.id === 'mastered')).toBe(false)
+  })
+
+  it('starts the day at 4 AM: 2 AM still belongs to the previous day', () => {
+    expect(ankiDayStart(new Date(2026, 10, 10, 2))).toEqual(new Date(2026, 10, 9, 4))
+    expect(nextAnkiDayStart(new Date(2026, 10, 9, 19))).toEqual(new Date(2026, 10, 10, 4))
   })
 })

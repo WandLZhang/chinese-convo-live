@@ -3,7 +3,7 @@ import type { Language, VocabEntry } from '../types'
 import { fetchWordLists, type WordLists } from '../services/vocabRepo'
 import { markWordMastered, updateReviewTime } from '../services/scheduler'
 
-const EMPTY: WordLists = { scheduled: [], new: [], mastered: [] }
+const EMPTY: WordLists = { incoming: [], scheduled: [], new: [], mastered: [] }
 
 /** ISO string with milliseconds stripped (the backend expects no ms). */
 function isoMinutesFromNow(minutes: number): string {
