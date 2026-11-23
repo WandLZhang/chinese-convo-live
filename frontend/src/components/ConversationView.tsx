@@ -6,6 +6,7 @@ import CritiquePanel from './CritiquePanel'
 import TappableText from './TappableText'
 import { translateSentence } from '../services/translate'
 import { tapHitsWord } from '../services/dict'
+import type { ContextEntry } from '../services/contextRepo'
 
 interface Props {
   turns: Turn[]
@@ -188,7 +189,7 @@ function AssistantBubble({
               <div className="bubble-extra">
                 <div className="bubble-divider" />
                 <span className="context-label">based on</span>
-                <span className="context-text">{turn.sourceContext}</span>
+                <ContextSource entry={turn.sourceContext} />
               </div>
             )}
           </div>
@@ -201,6 +202,29 @@ function AssistantBubble({
         </div>
       )}
     </div>
+  )
+}
+
+/** What a sentence was built from: the Signal message as written, or an older entry's one-line summary. */
+function ContextSource({ entry }: { entry: ContextEntry }) {
+  if (!entry.quote) return <span className="context-text">{entry.text}</span>
+  const when = entry.sentAt?.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const meta = [entry.sender, entry.chat ?? 'Direct message', when].filter(Boolean).join(' · ')
+  return (
+    <>
+      <span className="context-meta">{meta}</span>
+      {entry.replyTo && (
+        <span className="context-reply">
+          Replying to {entry.replyTo.author === 'me' ? 'you' : entry.replyTo.author}: “{entry.replyTo.text}”
+        </span>
+      )}
+      <span className="context-quote">“{entry.quote}”</span>
+      {entry.link?.url && (
+        <a className="context-link" href={entry.link.url} target="_blank" rel="noreferrer">
+          {entry.link.title || entry.link.url}
+        </a>
+      )}
+    </>
   )
 }
 

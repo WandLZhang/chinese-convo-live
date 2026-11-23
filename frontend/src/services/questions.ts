@@ -1,4 +1,4 @@
-import type { Language } from '../types'
+import type { ContextQuote, Language } from '../types'
 import { functionBase } from './firebase'
 
 const GENERATE_QUESTION_URL = `${functionBase}/convo_live_generate_question`
@@ -23,8 +23,12 @@ export interface GenerateQuestionParams {
   language: Language
   /** Recent exchange (previous question + learner reply) for a natural bridge. */
   conversationContext?: string
-  /** A short personal-context seed; when set on an opener, flavors the question. */
+  /** A one-line personal fact (older summary-only entries); flavors the question. */
   personalContext?: string
+  /** A Signal message as written, with who sent it, where and when; replaces personalContext. */
+  contextQuote?: ContextQuote | null
+  /** Today's local date (YYYY-MM-DD), so the generator can say "yesterday" about a message. */
+  today?: string
   /** True only for the conversation's opening turn (gates personalization). */
   isOpener?: boolean
   /** Called for each streamed chunk with (chunk, fullSoFar) — drives the live typewriter. */
@@ -40,10 +44,21 @@ export async function generateQuestion(
     language,
     conversationContext = '',
     personalContext = '',
+    contextQuote = null,
+    today,
     isOpener = false,
     onDelta,
   } = params
-  const body = { word, alt, language, conversationContext, personalContext, isOpener }
+  const body = {
+    word,
+    alt,
+    language,
+    conversationContext,
+    personalContext,
+    contextQuote,
+    today,
+    isOpener,
+  }
   console.log('[generateQuestion] request payload:', body)
 
   const response = await fetch(GENERATE_QUESTION_URL, {

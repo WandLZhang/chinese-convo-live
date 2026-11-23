@@ -58,6 +58,10 @@ cp firestore.rules firestore.rules.bak
 sed -i "s/owner@example.com/${OWNER_EMAIL}/" firestore.rules
 firebase deploy --only firestore:indexes,firestore:rules --project "$PROJECT_ID"
 mv firestore.rules.bak firestore.rules
+# Personal context lives 30 days: Firestore TTL deletes each context_entries doc 30 days after its
+# createdAt, usually within a day of that. Covers every writer (Signal VM, Google ingest).
+gcloud firestore fields ttls update createdAt --collection-group=context_entries --enable-ttl \
+  --expiration-offset=30d --project "$PROJECT_ID" --async
 
 echo "== [4/8] Firebase Hosting site =="
 firebase hosting:sites:create "wz-chinese-convo-live" --project "$PROJECT_ID" 2>/dev/null \

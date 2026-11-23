@@ -38,6 +38,16 @@ export interface VocabEntry {
   [key: string]: unknown
 }
 
+/** A Signal message as the generator gets it: who sent it, where, when, and the words as written. */
+export interface ContextQuote {
+  sender: string
+  chat: string | null // the group's name; null = a direct message
+  text: string
+  sentDate: string | null // local calendar date, YYYY-MM-DD
+  replyTo: { author: string; text: string } | null // author "me" = the learner
+  link: { url: string; title: string | null } | null
+}
+
 export interface QuestionData {
   question: string
   word: string

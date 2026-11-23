@@ -23,6 +23,20 @@ curl -fsSL -o signal-cli.tar.gz "https://github.com/AsamK/signal-cli/releases/do
 tar xf signal-cli.tar.gz
 ln -sf "/opt/signal-cli-${VER}/bin/signal-cli" /usr/local/bin/signal-cli
 
+# The ingest log holds the messages it read, so it keeps 30 days, like the Firestore entries.
+cat > /etc/logrotate.d/signal-ingest <<'ROT'
+/var/log/signal-ingest.log {
+    daily
+    rotate 30
+    maxage 30
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+ROT
+
 # python venv for the ingestion script
 python3 -m venv /opt/venv
 /opt/venv/bin/pip install -q --upgrade pip

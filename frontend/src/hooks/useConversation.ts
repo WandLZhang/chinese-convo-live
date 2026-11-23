@@ -1,9 +1,15 @@
 import { useCallback, useRef, useState } from 'react'
 import { Timestamp } from 'firebase/firestore'
-import type { Language, QuestionData, VocabEntry } from '../types'
+import type { ContextQuote, Language, QuestionData, VocabEntry } from '../types'
 import { selectNextVocab, selectRandomVocab } from '../services/vocabRepo'
 import { generateQuestion, generateAudio } from '../services/questions'
-import { pickContext, markContextUsed } from '../services/contextRepo'
+import {
+  pickContext,
+  markContextUsed,
+  quoteFor,
+  localDate,
+  type ContextEntry,
+} from '../services/contextRepo'
 import {
   evaluateAnswer,
   markWordMastered,
@@ -17,7 +23,7 @@ export interface AssistantTurn {
   vocab: VocabEntry
   question: QuestionData | null // null while generating (renders a shimmer)
   isOpener: boolean
-  sourceContext?: string // the personal fact this sentence was built from (paperclip reveal)
+  sourceContext?: ContextEntry // the message or fact this sentence was built from (paperclip reveal)
 }
 export interface UserTurn {
   id: string
@@ -63,19 +69,22 @@ export function useConversation({ language }: UseConversationArgs) {
         // Every turn (unified): ONE personal fact + the recent exchange. One fact keeps the
         // sentence about a single thing — several facts made the model list them all + revert
         // to using the word as a vocative ("股東, you just..."). The model weaves the SRS word in.
+        // A quoted Signal message goes to the generator as written, with who sent it and when; an
+        // older summary-only entry goes as its one line.
         let personalContext = ''
+        let contextQuote: ContextQuote | null = null
         let contextEntryIds: string[] = []
         try {
           const entries = await pickContext(language, 1)
           if (entries.length) {
-            personalContext = entries[0].text
+            const entry = entries[0]
+            contextQuote = quoteFor(entry)
+            if (!contextQuote) personalContext = entry.text
             contextEntryIds = entries.map((e) => e.id)
+            patchTurn(turnId, { sourceContext: entry } as Partial<AssistantTurn>)
           }
         } catch (err) {
           console.warn('[conversation] personal context unavailable:', err)
-        }
-        if (personalContext) {
-          patchTurn(turnId, { sourceContext: personalContext } as Partial<AssistantTurn>)
         }
         const conversationContext = lastExchangeRef.current
           ? `你：${lastExchangeRef.current.question}\n我：${lastExchangeRef.current.answer}`
@@ -97,6 +106,8 @@ export function useConversation({ language }: UseConversationArgs) {
           language,
           conversationContext,
           personalContext,
+          contextQuote,
+          today: localDate(new Date()),
           isOpener,
           onDelta: (_chunk, full) => {
             const streaming = { ...base, question: full, audioLoading: true }

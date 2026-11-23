@@ -15,6 +15,7 @@ colloquial Cantonese/Mandarin (natural word usage + register; e.g. 雪糕 not �
 vouch sense); TTFT ~0.6s streamed. Swap GEN_MODEL to change (a Grok/MaaS model would instead need
 the OpenAI-compatible endpoint path).
 """
+import datetime
 import json
 import logging
 import os
@@ -56,26 +57,88 @@ LANG = {"cantonese": "廣東話", "mandarin": "普通話"}
 converter = opencc.OpenCC("s2t")  # simplified -> traditional (Cantonese output must be traditional)
 
 
-def build_prompt(word, alt, language, personal_context, conversation_context):
+def _month_day(iso_date):
+    """'2026-11-23' -> (11, 23); None when absent or malformed."""
+    try:
+        d = datetime.date.fromisoformat(str(iso_date))
+        return d.month, d.day
+    except ValueError:
+        return None
+
+
+def quote_block(quote, today, language):
+    """A Signal message someone sent the learner, as written, with who sent it, where and when.
+    `quote` = {sender, chat (None = direct message), text, sentDate, replyTo {author, text}, link}."""
+    sender = quote.get("sender") or "someone"
+    chat = quote.get("chat")
+    sent = _month_day(quote.get("sentDate"))
+    now = _month_day(today)
+    reply = quote.get("replyTo") or {}
+    link = quote.get("link") or {}
+    link_text = link.get("title") or link.get("url")
+    text = quote.get("text", "")
+    if language == "cantonese":
+        lines = ["最近有人喺Signal度發咗條訊息俾我：", f"邊個發：{sender}", f"喺邊度發：{chat or '私訊'}"]
+        if sent:
+            lines.append(f"日期：{sent[0]}月{sent[1]}號" + (f"（今日係{now[0]}月{now[1]}號）" if now else ""))
+        if reply.get("text"):
+            whom = "我" if reply.get("author") == "me" else reply.get("author") or "人哋"
+            lines.append(f"呢條係回覆緊{whom}嘅訊息：「{reply['text']}」")
+        if link_text:
+            lines.append(f"訊息入面分享咗條連結：{link_text}")
+        lines.append(f"原文：「{text}」")
+        if "@me" in text:
+            lines.append("（原文入面嘅「@me」即係我）")
+    else:
+        lines = ["最近有人在Signal上给我发了一条消息：", f"发消息的人：{sender}", f"在哪儿发的：{chat or '私聊'}"]
+        if sent:
+            lines.append(f"日期：{sent[0]}月{sent[1]}日" + (f"（今天是{now[0]}月{now[1]}日）" if now else ""))
+        if reply.get("text"):
+            whom = "我" if reply.get("author") == "me" else reply.get("author") or "别人"
+            lines.append(f"这条是在回{whom}的消息：「{reply['text']}」")
+        if link_text:
+            lines.append(f"消息里分享的链接：{link_text}")
+        lines.append(f"原话：「{text}」")
+        if "@me" in text:
+            lines.append("（原话里的“@me”指的是我）")
+    return "\n".join(lines) + "\n"
+
+
+def build_prompt(word, alt, language, personal_context, conversation_context, quote=None, today=None):
     """One prompt for every turn: weave the SRS word (or its colloquial alt) into a natural,
     idiomatic sentence that fits the learner's life and the recent exchange. Statement or question
-    — no '?' required. No turn-type branching; trust the model to connect things naturally."""
+    — no '?' required. No turn-type branching; trust the model to connect things naturally.
+    `quote` (a Signal message, see quote_block) replaces `personal_context` (a one-line summary from
+    the older entries) when present, and the prompt says whose news it is."""
+    sender = (quote or {}).get("sender") or "someone"
     if language == "cantonese":
         word_t = converter.convert(word)  # traditional so output stays traditional
         target = alt if alt else word_t
         alt_note = f"（口語，即係書面語「{word_t}」）" if alt else ""
         recent = f"我哋啱啱傾緊：\n{conversation_context}\n" if conversation_context else ""
-        facts = f"我嘅近況：\n{personal_context}\n" if personal_context else ""
+        if quote:
+            facts = quote_block(quote, today, language)
+            tie = (f"就算要拗個彎都要扣返呢條訊息同啱啱傾嘅嘢（陳述句或問句都得）。"
+                   f"訊息係{sender}講嘅，提起嗰陣要講清楚係邊個講、邊個做，唔好將人哋嘅事當咗係我嘅。")
+        else:
+            facts = f"我嘅近況：\n{personal_context}\n" if personal_context else ""
+            tie = "就算要拗個彎都要扣返我嘅近況同啱啱傾嘅嘢（陳述句或問句都得）。"
         prompt = (f"你幫緊我練廣東話。{recent}{facts}"
                   f"寫一句你想問我或者同我講嘅、自然又地道嘅口語廣東話，句入面一定要用到「{target}」{alt_note}，"
-                  f"就算要拗個彎都要扣返我嘅近況同啱啱傾嘅嘢（陳述句或問句都得）。淨係輸出嗰句，用繁體字，唔要jyutping、翻譯或者解釋。")
+                  f"{tie}淨係輸出嗰句，用繁體字，唔要jyutping、翻譯或者解釋。")
     else:
         target = word
         recent = f"我们刚在聊：\n{conversation_context}\n" if conversation_context else ""
-        facts = f"我的近况：\n{personal_context}\n" if personal_context else ""
+        if quote:
+            facts = quote_block(quote, today, language)
+            tie = (f"就算要绕个弯也要扣上这条消息和刚聊的内容（陈述句或问句都行）。"
+                   f"消息是{sender}发的，提到的时候要说清楚是谁说的、谁做的，别把别人的事安到我头上。")
+        else:
+            facts = f"我的近况：\n{personal_context}\n" if personal_context else ""
+            tie = "就算要绕个弯也要扣上我的近况和刚聊的内容（陈述句或问句都行）。"
         prompt = (f"你在帮我练普通话。{recent}{facts}"
                   f"写一句你想问我或者跟我说的、自然又地道的口语普通话，句子里一定要用到「{word}」，"
-                  f"就算要绕个弯也要扣上我的近况和刚聊的内容（陈述句或问句都行）。只输出那一句，不要拼音、翻译或者解释。")
+                  f"{tie}只输出那一句，不要拼音、翻译或者解释。")
     return prompt, target
 
 
@@ -109,11 +172,16 @@ def convo_live_generate_question(request):
         alt = (req.get("alt") or "").strip() or None
         personal_context = (req.get("personalContext") or "").strip()
         conversation_context = (req.get("conversationContext") or "").strip()
-        system, target = build_prompt(word, alt, language, personal_context, conversation_context)
+        # A Signal message as written (entries saved since 2026-11-23); older entries send only the summary.
+        quote = req.get("contextQuote")
+        quote = quote if isinstance(quote, dict) and (quote.get("text") or "").strip() else None
+        system, target = build_prompt(word, alt, language, personal_context, conversation_context,
+                                      quote=quote, today=req.get("today"))
         max_tokens = MAX_TOKENS
         nudge = "開始。" if language == "cantonese" else "开始。"
         logger.info(f"word={word} alt={alt} language={language} target={target} "
-                    f"pcLen={len(personal_context)} ccLen={len(conversation_context)}")
+                    f"pcLen={len(personal_context)} quote={'yes' if quote else 'no'} "
+                    f"ccLen={len(conversation_context)}")
         logger.info(f"SYSTEM PROMPT:\n{system}")
 
         # ALT path: must actually contain `alt` -> generate whole, validate, retry, then emit.

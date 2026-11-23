@@ -1,10 +1,16 @@
 #!/opt/venv/bin/python
 """
 Signal ingestion (runs on the convo-live-signal VM, hourly via cron).
-`signal-cli receive` -> distill each incoming message via LLM_MODEL (identity-theft filter + digit
-backstop) -> upsert into Firestore `context_entries` (source="signal", dedup by timestamp).
+
+`signal-cli receive` -> LLM_MODEL screens each incoming message first: keep it only if it has enough
+content to talk about, and never if it holds credentials, codes or account numbers (a digit backstop
+runs after it). A kept message is stored as written in Firestore `context_entries` (source="signal",
+doc id from the Signal timestamp) with its sender, chat, date, the message it replies to and a shared
+link's preview. An edit updates the stored copy; a sender's delete-for-everyone deletes it.
+A Firestore TTL policy deletes every entry 30 days after `createdAt` (scripts/setup_infra.sh).
 Uses the VM's attached SA (convo-live-signal: datastore.user + aiplatform.user).
 """
+import datetime
 import hashlib
 import json
 import os
@@ -19,6 +25,7 @@ from google.cloud import firestore
 # cron runs with a bare PATH (/usr/bin:/bin) that omits /usr/local/bin, so resolve signal-cli's
 # absolute path here — a bare "signal-cli" raised FileNotFoundError on every cron run.
 SIGNAL_CLI = shutil.which("signal-cli") or "/usr/local/bin/signal-cli"
+SIGNAL_ACCOUNTS = "/root/.local/share/signal-cli/data/accounts.json"
 _creds, _adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
 PROJECT = os.getenv("PROJECT_ID") or _adc_project or "your-gcp-project"  # on the VM: derived from ADC
 LLM_MODEL = "google/gemini-3.5-flash-lite"
@@ -26,13 +33,26 @@ LLM_URL = (f"https://aiplatform.googleapis.com/v1/projects/{PROJECT}"
             "/locations/global/endpoints/openapi/chat/completions")
 db = firestore.Client(project=PROJECT)
 
-DISTILL_SYS = (
-    "You turn a raw personal chat message into ONE short, natural, conversation-worthy fact about "
-    "the user (<=20 words, English) usable to open a friendly chat. HARD RULE — NEVER include: "
-    "passwords, passcodes, PINs, 2FA/OTP/security codes, credentials, API keys; financial "
-    "account/card/routing/CVV numbers; SSN/national-ID/passport/license numbers; full home address. "
-    "If the message is entirely sensitive or has no conversational value, output NOTHING. "
-    "Output ONLY the fact, no preamble, no quotes.")
+SCREEN_SYS = (
+    "You screen one Signal message that someone sent the user. A language-learning app turns each "
+    "message you keep into a conversation prompt, such as asking the user about what the sender said, "
+    "so keep only messages with enough content to talk about.\n"
+    "Keep it when a friend could ask a specific follow-up question about it: news about the sender or "
+    "someone they know, a plan or an event, a trip, an opinion, a story, a question with real substance, "
+    "or a shared link whose title or description says what it's about.\n"
+    "Drop it when it's a greeting, thanks or congratulations with no detail; an acknowledgment such as "
+    "ok, lol, yes or an emoji; logistics with no story, such as on my way or call me; a bare link with "
+    "no title; or a fragment you can't follow without more of the chat.\n"
+    "Always drop it, and set sensitive to true, when the message, the message it replies to or the link "
+    "holds a password, passcode, PIN, 2FA or one-time code, credential or API key; a financial account, "
+    "card, routing or CVV number; an SSN, national ID, passport or driver's license number; or a full "
+    "home address.\n"
+    "Input fields: sender (who sent it), chat (the group's name; null for a direct message), text (the "
+    "message), replyTo (the message it answers; author \"me\" is the user), link (a shared link's "
+    "preview). \"@me\" in a text is the user.\n"
+    'Return only a JSON object: {"keep": true or false, "sensitive": true or false, "reason": "why, in '
+    '12 words or fewer", "summary": "if kept, one English sentence of 20 words or fewer naming who said '
+    'or did what; otherwise empty"}')
 
 
 def _token():
@@ -40,18 +60,25 @@ def _token():
     return _creds.token
 
 
-def distill(raw):
+def screen(item):
+    """LLM_MODEL's verdict on one message: {keep, sensitive, reason, summary}."""
     r = requests.post(LLM_URL, timeout=60,
         headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"},
-        json={"model": LLM_MODEL, "temperature": 0.3, "max_tokens": 60,
-              "messages": [{"role": "system", "content": DISTILL_SYS},
-                           {"role": "user", "content": raw[:4000]}]})
+        json={"model": LLM_MODEL, "temperature": 0, "max_tokens": 300,
+              "response_format": {"type": "json_object"},
+              "messages": [{"role": "system", "content": SCREEN_SYS},
+                           {"role": "user", "content": json.dumps(item, ensure_ascii=False)}]})
     if r.status_code != 200:
         raise RuntimeError(f"{LLM_MODEL} returned {r.status_code}: {r.text}")
-    return (r.json()["choices"][0]["message"].get("content") or "").strip()
+    content = r.json()["choices"][0]["message"].get("content")
+    if not content:
+        raise RuntimeError(f"{LLM_MODEL} returned no content: {r.text}")
+    return json.loads(content)
 
 
 def _looks_sensitive(text):
+    """Deterministic safety net under the LLM screen (not semantic parsing): true if a long digit run
+    (card/account/routing, 11+) or an SSN-shaped 3-2-4 group is in the text."""
     groups, cur = [], ""
     for ch in text:
         if ch.isdigit():
@@ -68,52 +95,157 @@ def _looks_sensitive(text):
                for i in range(len(groups) - 2))
 
 
-def upsert(source_ref, text):
-    if not text or len(text) < 4 or _looks_sensitive(text):
-        return False
-    doc_id = "e" + hashlib.sha1(f"signal:{source_ref}".encode("utf-8")).hexdigest()[:20]
-    ref = db.collection("context_entries").document(doc_id)
-    if ref.get().exists:
-        ref.update({"text": text})
-        return False
-    ref.set({"source": "signal", "sourceRef": source_ref, "text": text,
-             "createdAt": firestore.SERVER_TIMESTAMP, "usedCantoneseAt": None, "usedMandarinAt": None})
-    return True
+def _scannable(item):
+    """Every stored text field, with link tokens left out: a URL's long post ID isn't an account number."""
+    parts = [item["text"], (item["replyTo"] or {}).get("text") or "",
+             (item["link"] or {}).get("title") or "", (item["link"] or {}).get("description") or ""]
+    words = " ".join(parts).split()
+    return " ".join(w for w in words if not w.startswith(("http://", "https://")))
 
 
-def _account():
-    out = subprocess.run([SIGNAL_CLI, "listAccounts"], capture_output=True, text=True).stdout
-    for tok in out.replace(":", " ").split():
-        if tok.startswith("+"):
-            return tok
-    return None
+def _accounts():
+    """[(number, uuid)] of the linked account(s), from signal-cli's own account file."""
+    try:
+        with open(SIGNAL_ACCOUNTS) as f:
+            return [(a.get("number"), a.get("uuid")) for a in json.load(f).get("accounts", [])]
+    except FileNotFoundError:
+        return []
+
+
+def _names(number, accounts):
+    """uuid/number -> the contact's name; the linked account itself -> "me"."""
+    out = subprocess.run([SIGNAL_CLI, "-a", number, "-o", "json", "listContacts"],
+                         capture_output=True, text=True, timeout=120).stdout
+    names = {}
+    for c in json.loads(out or "[]"):
+        prof = c.get("profile") or {}
+        name = (c.get("name") or c.get("nickName")
+                or " ".join(x for x in (prof.get("givenName"), prof.get("familyName")) if x)).strip()
+        for key in (c.get("uuid"), c.get("number")):
+            if key and name:
+                names[key] = name
+    for num, uuid in accounts:
+        for key in (num, uuid):
+            if key:
+                names[key] = "me"
+    return names
+
+
+def _who(names, uuid, number):
+    return names.get(uuid) or names.get(number) or "someone"
+
+
+def _render_mentions(text, mentions, names):
+    """Signal puts U+FFFC where an @mention goes; write the person's name there. start and length
+    count UTF-16 code units, so splice in UTF-16."""
+    if not text or not mentions:
+        return text
+    u = text.encode("utf-16-le")
+    for m in sorted(mentions, key=lambda m: m.get("start", 0), reverse=True):
+        s = 2 * m.get("start", 0)
+        e = s + 2 * m.get("length", 0)
+        u = u[:s] + f"@{_who(names, m.get('uuid'), m.get('number'))}".encode("utf-16-le") + u[e:]
+    return u.decode("utf-16-le")
+
+
+def _item(env, dm, names):
+    """The message as the app stores it, or None when it has no text (reactions, stickers, photos)."""
+    text = _render_mentions(dm.get("message"), dm.get("mentions"), names)
+    if not text or not text.strip():
+        return None
+    group = dm.get("groupInfo")
+    q = dm.get("quote") or {}
+    reply = None
+    if q.get("text"):
+        reply = {"author": _who(names, q.get("authorUuid"), q.get("authorNumber")),
+                 "text": _render_mentions(q.get("text"), q.get("mentions"), names)}
+    pv = (dm.get("previews") or [{}])[0] or {}
+    link = ({"url": pv.get("url"), "title": pv.get("title"), "description": pv.get("description")}
+            if pv.get("url") else None)
+    return {"sender": env.get("sourceName") or _who(names, env.get("sourceUuid"), env.get("sourceNumber")),
+            "chat": (group.get("groupName") or "a group chat") if group else None,  # None = direct message
+            "text": text,
+            "replyTo": reply,
+            "link": link}
+
+
+def _ref(ts):
+    return db.collection("context_entries").document(
+        "e" + hashlib.sha1(f"signal:{ts}".encode("utf-8")).hexdigest()[:20])
+
+
+def store(ts, item, verdict):
+    """Write a kept message; delete a stored copy that an edit turned into one we drop."""
+    keep = verdict.get("keep") is True and verdict.get("sensitive") is not True
+    if keep and _looks_sensitive(_scannable(item)):
+        keep = False
+        verdict["backstop"] = True
+    ref = _ref(ts)
+    exists = ref.get().exists
+    if not keep:
+        if exists:
+            ref.delete()
+            return "deleted"
+        return "dropped"
+    fields = {"text": verdict.get("summary") or item["text"], "quote": item["text"],
+              "sender": item["sender"], "chat": item["chat"], "replyTo": item["replyTo"],
+              "link": item["link"],
+              "sentAt": datetime.datetime.fromtimestamp(int(ts) / 1000, tz=datetime.timezone.utc)}
+    if exists:
+        ref.update(fields)
+        return "updated"
+    ref.set({**fields, "source": "signal", "sourceRef": str(ts), "createdAt": firestore.SERVER_TIMESTAMP,
+             "usedCantoneseAt": None, "usedMandarinAt": None})
+    return "kept"
 
 
 def main():
-    acc = _account()
-    if not acc:
+    accounts = _accounts()
+    if not accounts or not accounts[0][0]:
         print("no linked signal account")
         return
-    out = subprocess.run([SIGNAL_CLI, "-a", acc, "-o", "json", "receive"],
+    number = accounts[0][0]
+    names = _names(number, accounts)
+    out = subprocess.run([SIGNAL_CLI, "-a", number, "-o", "json", "receive"],
                          capture_output=True, text=True, timeout=180).stdout
-    n = 0
+    counts = {"kept": 0, "updated": 0, "dropped": 0, "deleted": 0, "failed": 0}
     for line in out.splitlines():
         try:
             env = json.loads(line).get("envelope", {})
-        except Exception:  # noqa: BLE001
+        except ValueError:
             continue
-        dm = env.get("dataMessage") or {}
-        body = dm.get("message")
-        if not body:
+        dm, ts = env.get("dataMessage"), env.get("timestamp")
+        edit = env.get("editMessage")
+        if edit:  # an edit replaces the stored copy of the original message
+            dm, ts = edit.get("dataMessage"), edit.get("targetSentTimestamp")
+        if not dm or not ts:
             continue
-        src = env.get("sourceName") or env.get("sourceNumber") or "someone"
-        ts = env.get("timestamp", "")
+        gone = (dm.get("remoteDelete") or {}).get("timestamp")
+        if gone:  # the sender deleted it for everyone, so drop our copy too
+            ref = _ref(gone)
+            if ref.get().exists:
+                ref.delete()
+                counts["deleted"] += 1
+                print(json.dumps({"ref": gone, "action": "deleted", "why": "sender deleted it"}))
+            continue
+        item = _item(env, dm, names)
+        if not item:
+            continue
         try:
-            if upsert(str(ts), distill(f"From {src}: {body}")):
-                n += 1
-        except Exception as ex:  # noqa: BLE001
-            print(f"signal item skipped: {ex}")
-    print(f"signal ingest: {n} new entries")
+            verdict = screen(item)
+            action = store(ts, item, verdict)
+            counts[action] += 1
+            if verdict.get("sensitive") is True or verdict.get("backstop"):
+                # Never write a code or account number to the log, not even inside the model's reason.
+                print(json.dumps({"ref": ts, "action": action, "sensitive": verdict.get("sensitive") is True,
+                                  "backstop": bool(verdict.get("backstop"))}))
+            else:
+                print(json.dumps({"ref": ts, "item": item, "verdict": verdict, "action": action},
+                                 ensure_ascii=False))
+        except Exception as ex:  # noqa: BLE001 — one bad message must not abort the batch
+            counts["failed"] += 1
+            print(f"signal item {ts} failed: {ex}")
+    print(f"signal ingest: {json.dumps(counts)}")
 
 
 if __name__ == "__main__":
