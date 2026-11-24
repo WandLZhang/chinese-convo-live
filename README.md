@@ -139,7 +139,10 @@ from their phone. It keeps a message only if it has enough content to talk about
 credentials, codes or account numbers. A kept message is stored as written, with its sender, recipient,
 chat, date, the message it replies to and a shared link's preview, and the generator gets it in that
 form. The Calendar/Gmail/Drive ingest stores only a one-line summary per item, and drops an item
-that holds sensitive data or has nothing to talk about.
+that holds sensitive data or has nothing to talk about. Entries can also come from WhatsApp, Messenger,
+Messages, Google Chat or email through a feed outside this repo. It imports the same screen from
+`local/signal_ingest.py` and writes the same entry shape, with `source` naming the app and `preview`
+marking a chat-list preview.
 A Firestore TTL policy deletes every `context_entries` doc 30 days after it was saved, and the VM's
 ingest log rotates out after 30 days.
 

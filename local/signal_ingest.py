@@ -36,15 +36,17 @@ LLM_URL = (f"https://aiplatform.googleapis.com/v1/projects/{PROJECT}"
 db = firestore.Client(project=PROJECT)
 
 SCREEN_SYS = (
-    "You screen one Signal message: one that someone sent the user, or one the user sent (sender \"me\"). "
-    "A language-learning app turns each message you keep into a conversation prompt, such as asking the "
-    "user about what was said, so keep only messages with enough content to talk about.\n"
+    "You screen one message that reached the user, or one the user sent (sender \"me\"): a Signal, "
+    "WhatsApp, Messenger or text message, a Google Chat message, or an email. A language-learning app "
+    "turns each message you keep into a conversation prompt, such as asking the user about what was "
+    "said, so keep only messages with enough content to talk about.\n"
     "Keep it when a friend could ask a specific follow-up question about it: news about the sender or "
     "someone they know, a plan or an event, a trip, an opinion, a story, a question with real substance, "
     "or a shared link whose title or description says what it's about.\n"
     "Drop it when it's a greeting, thanks or congratulations with no detail; an acknowledgment such as "
     "ok, lol, yes or an emoji; logistics with no story, such as on my way or call me; a bare link with "
-    "no title; or a fragment you can't follow without more of the chat.\n"
+    "no title; marketing, a newsletter, a receipt, a notification or other automated mail; or a "
+    "fragment you can't follow without more of the chat.\n"
     "Always drop it, set sensitive to true and name the kind, when the message, the message it replies "
     "to or the link holds any of these:\n"
     "- credential: a password, passcode, PIN, 2FA or one-time code, credential or API key; a financial "
@@ -59,14 +61,18 @@ SCREEN_SYS = (
     "- grief: a death, a funeral or someone's grief.\n"
     "- confidential: anything said in confidence, or work matters that aren't public.\n"
     "Everyday news, plans, trips, opinions, jokes and stories stay eligible.\n"
-    "Input fields: sender (who sent it; \"me\" is the user), to (who got a direct message the user "
-    "sent), chat (the group's name, \"Note to Self\", or null for a direct message), text (the message), "
-    "replyTo (the message it answers; author \"me\" is the user), link (a shared link's preview). "
-    "\"@me\" in a text is the user.\n"
+    "Input fields: source (the app), sender (who sent it; \"me\" is the user), to (who got a direct "
+    "message the user sent), chat (the group's name, \"Note to Self\", or null for a direct message), "
+    "text (the message; an email's subject is its first line), replyTo (the message it answers; author "
+    "\"me\" is the user), link (a shared link's preview), preview (true when text is only a chat-list "
+    "preview: it may be cut off, sender is unknown, and chat is the conversation's name). \"@me\" in a "
+    "text is the user.\n"
     'Return only a JSON object: {"keep": true or false, "sensitive": true or false, "kind": "the sensitive '
     'kind above, or empty", "reason": "why, in '
     '12 words or fewer", "summary": "if kept, one English sentence of 20 words or fewer naming who said '
-    'or did what, calling the user \'the user\'; otherwise empty"}')
+    'or did what, calling the user \'the user\'; otherwise empty", "sender": "only when preview is true: '
+    'who wrote the text, \\"me\\" for the user (a line starting You:), else the name shown, else the '
+    'conversation\'s name"}')
 
 
 def _token():
@@ -187,7 +193,8 @@ def _item(env, dm, names, sent=None):
     pv = (dm.get("previews") or [{}])[0] or {}
     link = ({"url": pv.get("url"), "title": pv.get("title"), "description": pv.get("description")}
             if pv.get("url") else None)
-    return {"sender": sender, "to": to, "chat": chat, "text": text, "replyTo": reply, "link": link}
+    return {"source": "signal", "sender": sender, "to": to, "chat": chat, "text": text, "replyTo": reply,
+            "link": link}
 
 
 def _ref(ts):
@@ -208,7 +215,7 @@ def store(ts, item, verdict):
             ref.delete()
             return "deleted"
         return "dropped"
-    fields = {"text": verdict.get("summary") or item["text"], "quote": item["text"],
+    fields = {"text": verdict.get("summary") or item["text"], "quote": item["text"], "preview": False,
               "sender": item["sender"], "to": item["to"], "chat": item["chat"], "replyTo": item["replyTo"],
               "link": item["link"],
               "sentAt": datetime.datetime.fromtimestamp(int(ts) / 1000, tz=datetime.timezone.utc)}

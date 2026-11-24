@@ -40,6 +40,8 @@ export interface VocabEntry {
 
 /** A Signal message as the generator gets it: who sent it, where, when, and the words as written. */
 export interface ContextQuote {
+  source: string // the app: signal, whatsapp, messenger, messages, google_chat or email
+  preview: boolean // true = only a chat-list preview, possibly cut off
   sender: string // "me" = the learner, for a message they sent
   to: string | null // who got a direct message the learner sent
   chat: string | null // the group's name or "Note to Self"; null = a direct message

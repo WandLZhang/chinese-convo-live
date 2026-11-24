@@ -205,13 +205,23 @@ function AssistantBubble({
   )
 }
 
-/** What a sentence was built from: the Signal message as written, or an older entry's one-line summary. */
+const APPS: Record<string, string> = {
+  signal: 'Signal',
+  whatsapp: 'WhatsApp',
+  messenger: 'Messenger',
+  messages: 'Messages',
+  google_chat: 'Google Chat',
+  email: 'Email',
+}
+
+/** What a sentence was built from: the message as written, or an older entry's one-line summary. */
 function ContextSource({ entry }: { entry: ContextEntry }) {
   if (!entry.quote) return <span className="context-text">{entry.text}</span>
   const when = entry.sentAt?.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   const mine = entry.sender === 'me'
-  const where = entry.chat ?? (mine && entry.to ? `to ${entry.to}` : 'Direct message')
-  const meta = [mine ? 'You' : entry.sender, where, when].filter(Boolean).join(' · ')
+  const where = entry.chat ?? (mine && entry.to ? `to ${entry.to}` : null)
+  const app = APPS[entry.source] ?? entry.source
+  const meta = [mine ? 'You' : entry.sender, where, app, when].filter(Boolean).join(' · ')
   return (
     <>
       <span className="context-meta">{meta}</span>
@@ -221,6 +231,7 @@ function ContextSource({ entry }: { entry: ContextEntry }) {
         </span>
       )}
       <span className="context-quote">“{entry.quote}”</span>
+      {entry.preview && <span className="context-reply">Chat-list preview, may be cut off</span>}
       {entry.link?.url && (
         <a className="context-link" href={entry.link.url} target="_blank" rel="noreferrer">
           {entry.link.title || entry.link.url}

@@ -66,10 +66,16 @@ def _month_day(iso_date):
         return None
 
 
+# The app each kind of entry came from, as the prompt names it: (Mandarin, Cantonese). Texts and email get their
+# own wording below.
+APPS = {"signal": ("Signal", "Signal"), "whatsapp": ("WhatsApp", "WhatsApp"), "messenger": ("Messenger", "Messenger"),
+        "google_chat": ("Google Chat", "Google Chat")}
+
+
 def quote_block(quote, today, language):
-    """A Signal message, as written, with who sent it, where and when: one someone sent the learner,
-    or one the learner sent (sender "me", with `to` naming the recipient of a direct message).
-    `quote` = {sender, to, chat (None = direct message), text, sentDate, replyTo {author, text}, link}."""
+    """A message, as written, with who sent it, where and when: one someone sent the learner, or one the learner
+    sent (sender "me", with `to` naming the recipient of a direct message or email).
+    `quote` = {source, preview, sender, to, chat (None = direct message), text, sentDate, replyTo, link}."""
     sender = quote.get("sender") or "someone"
     mine = sender == "me"
     to = quote.get("to")
@@ -80,11 +86,32 @@ def quote_block(quote, today, language):
     link = quote.get("link") or {}
     link_text = link.get("title") or link.get("url")
     text = quote.get("text", "")
-    if language == "cantonese":
-        if mine:
-            lines = ["我最近喺Signal度發咗條訊息：", f"喺邊度發：{chat}" if chat else f"發咗俾：{to or '一個朋友'}"]
+    source = quote.get("source") or "signal"
+    cantonese = language == "cantonese"
+    if source == "email":
+        if cantonese:
+            lines = (["我最近發咗封電郵：", f"收件人：{to or '一個朋友'}"] if mine
+                     else ["最近有人發咗封電郵俾我：", f"寄件人：{sender}"])
         else:
-            lines = ["最近有人喺Signal度發咗條訊息俾我：", f"邊個發：{sender}", f"喺邊度發：{chat or '私訊'}"]
+            lines = (["我最近发了一封邮件：", f"收件人：{to or '一个朋友'}"] if mine
+                     else ["最近有人给我发了一封邮件：", f"发件人：{sender}"])
+    else:
+        app_m, app_c = APPS.get(source, (source, source))
+        if cantonese:
+            if source == "messages":
+                intro = "我最近發咗個短訊：" if mine else "最近有人發咗個短訊俾我："
+            else:
+                intro = f"我最近喺{app_c}度發咗條訊息：" if mine else f"最近有人喺{app_c}度發咗條訊息俾我："
+            lines = ([intro, f"喺邊度發：{chat}" if chat else f"發咗俾：{to or '一個朋友'}"] if mine
+                     else [intro, f"邊個發：{sender}", f"喺邊度發：{chat or '私訊'}"])
+        else:
+            if source == "messages":
+                intro = "我最近发了一条短信：" if mine else "最近有人给我发了一条短信："
+            else:
+                intro = f"我最近在{app_m}上发了一条消息：" if mine else f"最近有人在{app_m}上给我发了一条消息："
+            lines = ([intro, f"发在哪儿：{chat}" if chat else f"发给：{to or '一个朋友'}"] if mine
+                     else [intro, f"发消息的人：{sender}", f"在哪儿发的：{chat or '私聊'}"])
+    if cantonese:
         if sent:
             lines.append(f"日期：{sent[0]}月{sent[1]}號" + (f"（今日係{now[0]}月{now[1]}號）" if now else ""))
         if reply.get("text"):
@@ -93,13 +120,11 @@ def quote_block(quote, today, language):
         if link_text:
             lines.append(f"訊息入面分享咗條連結：{link_text}")
         lines.append(f"{'我嘅' if mine else ''}原文：「{text}」")
+        if quote.get("preview"):
+            lines.append("（呢段係聊天列表嘅預覽，可能唔完整）")
         if "@me" in text:
             lines.append("（原文入面嘅「@me」即係我）")
     else:
-        if mine:
-            lines = ["我最近在Signal上发了一条消息：", f"发在哪儿：{chat}" if chat else f"发给：{to or '一个朋友'}"]
-        else:
-            lines = ["最近有人在Signal上给我发了一条消息：", f"发消息的人：{sender}", f"在哪儿发的：{chat or '私聊'}"]
         if sent:
             lines.append(f"日期：{sent[0]}月{sent[1]}日" + (f"（今天是{now[0]}月{now[1]}日）" if now else ""))
         if reply.get("text"):
@@ -108,6 +133,8 @@ def quote_block(quote, today, language):
         if link_text:
             lines.append(f"消息里分享的链接：{link_text}")
         lines.append(f"{'我的' if mine else ''}原话：「{text}」")
+        if quote.get("preview"):
+            lines.append("（这是聊天列表里的预览，可能不完整）")
         if "@me" in text:
             lines.append("（原话里的“@me”指的是我）")
     return "\n".join(lines) + "\n"
