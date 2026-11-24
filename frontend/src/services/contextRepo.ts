@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore'
 import { db } from './firebase'
 import type { ContextQuote, Language } from '../types'
+import { chooseEntries } from './contextPick'
 
 // The deterministic personalization DB, built server-side (see docs/superpowers/specs).
 // The client only READS an unused entry for the opener and marks it used — no OAuth here.
@@ -35,8 +36,7 @@ export interface ContextEntry {
   link?: { url: string; title?: string | null; description?: string | null } | null
 }
 
-const WINDOW = 40 // consider the N most recently ingested facts (recency bias)
-const LRU_POOL = 8 // among those, choose from the K least-recently-used (variety, not deterministic)
+const WINDOW = 40 // consider the N most recently saved entries of each kind (recency bias)
 
 function toMillis(v: unknown): number {
   // Firestore Timestamp -> ms; null/never-used -> 0 (treated as oldest = highest priority).
@@ -68,22 +68,21 @@ function toEntry(id: string, data: DocumentData): ContextEntry {
 }
 
 /**
- * Recency-biased LRU: from the most-recently-ingested facts, return `n` of the least-recently-used
- * for this language (never-used first), with light randomness for variety. Entries that carry the
- * message itself come first; the summary-only ones are the fallback until a quoted one exists.
- * A Firestore TTL policy deletes every entry 30 days after it was saved. Empty array only if the
- * collection is empty.
+ * `n` entries for the next sentence, from the most recently saved ones (recency bias). Entries that carry the message
+ * itself come first, and each sits out a day after it's used, so a handful of quotes doesn't repeat every turn; the
+ * summary-only entries fill in meanwhile (see chooseEntries). A Firestore TTL policy deletes every entry 30 days
+ * after it was saved. Empty array only if the collection is empty.
  */
 export async function pickContext(language: Language, n = 1): Promise<ContextEntry[]> {
   const col = collection(db, COLLECTION)
-  // orderBy('sentAt') returns only the docs that have the field, which is the quoted ones.
-  let snap = await getDocs(query(col, orderBy('sentAt', 'desc'), limit(WINDOW)))
-  if (snap.empty) snap = await getDocs(query(col, orderBy('createdAt', 'desc'), limit(WINDOW)))
-  if (snap.empty) return []
   const field = usedField(language)
-  const byLru = [...snap.docs].sort((a, b) => toMillis(a.data()[field]) - toMillis(b.data()[field]))
-  const pool = byLru.slice(0, Math.max(LRU_POOL, n))
-  const chosen = pool.sort(() => Math.random() - 0.5).slice(0, n)
+  // orderBy('sentAt') returns only the docs that have the field, which is the quoted ones.
+  const quoted = (await getDocs(query(col, orderBy('sentAt', 'desc'), limit(WINDOW)))).docs
+  const recent = (await getDocs(query(col, orderBy('createdAt', 'desc'), limit(WINDOW)))).docs
+  const summaries = recent.filter((d) => !(typeof d.data().quote === 'string' && d.data().quote))
+  const chosen = chooseEntries(quoted, summaries, (d) => toMillis(d.data()[field]), Date.now(), n)
+  console.log('[pickContext]', language, { quoted: quoted.length, summaries: summaries.length,
+    chosen: chosen.map((d) => d.id) })
   return chosen.map((d) => toEntry(d.id, d.data()))
 }
 
