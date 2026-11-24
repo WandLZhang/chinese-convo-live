@@ -134,10 +134,11 @@ PROJECT_ID=your-gcp-project OWNER_EMAIL=you@example.com \
 ```
 The Signal reader runs on the private VM (`local/signal_vm_startup.sh` installs signal-cli; link a
 device with `local/signal_link.sh`, then `local/signal_ingest.py` runs hourly via cron). Gemini 3.5
-Flash-Lite screens each Signal message first. It keeps a message only if it has enough content to talk
-about and holds no credentials, codes or account numbers. A kept message is stored as written, with its
-sender, chat, date, the message it replies to and a shared link's preview, and the generator gets it in
-that form. The Calendar/Gmail/Drive ingest stores only a one-line summary per item, and drops an item
+Flash-Lite screens each Signal message first, both the ones people send and the ones the owner sends
+from their phone. It keeps a message only if it has enough content to talk about and holds no
+credentials, codes or account numbers. A kept message is stored as written, with its sender, recipient,
+chat, date, the message it replies to and a shared link's preview, and the generator gets it in that
+form. The Calendar/Gmail/Drive ingest stores only a one-line summary per item, and drops an item
 that holds sensitive data or has nothing to talk about.
 A Firestore TTL policy deletes every `context_entries` doc 30 days after it was saved, and the VM's
 ingest log rotates out after 30 days.

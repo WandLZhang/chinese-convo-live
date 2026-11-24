@@ -40,8 +40,9 @@ export interface VocabEntry {
 
 /** A Signal message as the generator gets it: who sent it, where, when, and the words as written. */
 export interface ContextQuote {
-  sender: string
-  chat: string | null // the group's name; null = a direct message
+  sender: string // "me" = the learner, for a message they sent
+  to: string | null // who got a direct message the learner sent
+  chat: string | null // the group's name or "Note to Self"; null = a direct message
   text: string
   sentDate: string | null // local calendar date, YYYY-MM-DD
   replyTo: { author: string; text: string } | null // author "me" = the learner

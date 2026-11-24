@@ -67,9 +67,12 @@ def _month_day(iso_date):
 
 
 def quote_block(quote, today, language):
-    """A Signal message someone sent the learner, as written, with who sent it, where and when.
-    `quote` = {sender, chat (None = direct message), text, sentDate, replyTo {author, text}, link}."""
+    """A Signal message, as written, with who sent it, where and when: one someone sent the learner,
+    or one the learner sent (sender "me", with `to` naming the recipient of a direct message).
+    `quote` = {sender, to, chat (None = direct message), text, sentDate, replyTo {author, text}, link}."""
     sender = quote.get("sender") or "someone"
+    mine = sender == "me"
+    to = quote.get("to")
     chat = quote.get("chat")
     sent = _month_day(quote.get("sentDate"))
     now = _month_day(today)
@@ -78,7 +81,10 @@ def quote_block(quote, today, language):
     link_text = link.get("title") or link.get("url")
     text = quote.get("text", "")
     if language == "cantonese":
-        lines = ["最近有人喺Signal度發咗條訊息俾我：", f"邊個發：{sender}", f"喺邊度發：{chat or '私訊'}"]
+        if mine:
+            lines = ["我最近喺Signal度發咗條訊息：", f"喺邊度發：{chat}" if chat else f"發咗俾：{to or '一個朋友'}"]
+        else:
+            lines = ["最近有人喺Signal度發咗條訊息俾我：", f"邊個發：{sender}", f"喺邊度發：{chat or '私訊'}"]
         if sent:
             lines.append(f"日期：{sent[0]}月{sent[1]}號" + (f"（今日係{now[0]}月{now[1]}號）" if now else ""))
         if reply.get("text"):
@@ -86,11 +92,14 @@ def quote_block(quote, today, language):
             lines.append(f"呢條係回覆緊{whom}嘅訊息：「{reply['text']}」")
         if link_text:
             lines.append(f"訊息入面分享咗條連結：{link_text}")
-        lines.append(f"原文：「{text}」")
+        lines.append(f"{'我嘅' if mine else ''}原文：「{text}」")
         if "@me" in text:
             lines.append("（原文入面嘅「@me」即係我）")
     else:
-        lines = ["最近有人在Signal上给我发了一条消息：", f"发消息的人：{sender}", f"在哪儿发的：{chat or '私聊'}"]
+        if mine:
+            lines = ["我最近在Signal上发了一条消息：", f"发在哪儿：{chat}" if chat else f"发给：{to or '一个朋友'}"]
+        else:
+            lines = ["最近有人在Signal上给我发了一条消息：", f"发消息的人：{sender}", f"在哪儿发的：{chat or '私聊'}"]
         if sent:
             lines.append(f"日期：{sent[0]}月{sent[1]}日" + (f"（今天是{now[0]}月{now[1]}日）" if now else ""))
         if reply.get("text"):
@@ -98,7 +107,7 @@ def quote_block(quote, today, language):
             lines.append(f"这条是在回{whom}的消息：「{reply['text']}」")
         if link_text:
             lines.append(f"消息里分享的链接：{link_text}")
-        lines.append(f"原话：「{text}」")
+        lines.append(f"{'我的' if mine else ''}原话：「{text}」")
         if "@me" in text:
             lines.append("（原话里的“@me”指的是我）")
     return "\n".join(lines) + "\n"
@@ -111,6 +120,7 @@ def build_prompt(word, alt, language, personal_context, conversation_context, qu
     `quote` (a Signal message, see quote_block) replaces `personal_context` (a one-line summary from
     the older entries) when present, and the prompt says whose news it is."""
     sender = (quote or {}).get("sender") or "someone"
+    mine = sender == "me"
     if language == "cantonese":
         word_t = converter.convert(word)  # traditional so output stays traditional
         target = alt if alt else word_t
@@ -118,8 +128,9 @@ def build_prompt(word, alt, language, personal_context, conversation_context, qu
         recent = f"我哋啱啱傾緊：\n{conversation_context}\n" if conversation_context else ""
         if quote:
             facts = quote_block(quote, today, language)
-            tie = (f"就算要拗個彎都要扣返呢條訊息同啱啱傾嘅嘢（陳述句或問句都得）。"
-                   f"訊息係{sender}講嘅，提起嗰陣要講清楚係邊個講、邊個做，唔好將人哋嘅事當咗係我嘅。")
+            tie = "就算要拗個彎都要扣返呢條訊息同啱啱傾嘅嘢（陳述句或問句都得）。" + (
+                "呢條訊息係我自己發嘅。" if mine else
+                f"訊息係{sender}講嘅，提起嗰陣要講清楚係邊個講、邊個做，唔好將人哋嘅事當咗係我嘅。")
         else:
             facts = f"我嘅近況：\n{personal_context}\n" if personal_context else ""
             tie = "就算要拗個彎都要扣返我嘅近況同啱啱傾嘅嘢（陳述句或問句都得）。"
@@ -131,8 +142,9 @@ def build_prompt(word, alt, language, personal_context, conversation_context, qu
         recent = f"我们刚在聊：\n{conversation_context}\n" if conversation_context else ""
         if quote:
             facts = quote_block(quote, today, language)
-            tie = (f"就算要绕个弯也要扣上这条消息和刚聊的内容（陈述句或问句都行）。"
-                   f"消息是{sender}发的，提到的时候要说清楚是谁说的、谁做的，别把别人的事安到我头上。")
+            tie = "就算要绕个弯也要扣上这条消息和刚聊的内容（陈述句或问句都行）。" + (
+                "这条消息是我自己发的。" if mine else
+                f"消息是{sender}发的，提到的时候要说清楚是谁说的、谁做的，别把别人的事安到我头上。")
         else:
             facts = f"我的近况：\n{personal_context}\n" if personal_context else ""
             tie = "就算要绕个弯也要扣上我的近况和刚聊的内容（陈述句或问句都行）。"

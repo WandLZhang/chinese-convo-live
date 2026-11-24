@@ -2,10 +2,11 @@
 """
 Signal ingestion (runs on the convo-live-signal VM, hourly via cron).
 
-`signal-cli receive` -> LLM_MODEL screens each incoming message first: keep it only if it has enough
-content to talk about, and never if it holds credentials, codes or account numbers (a digit backstop
-runs after it). A kept message is stored as written in Firestore `context_entries` (source="signal",
-doc id from the Signal timestamp) with its sender, chat, date, the message it replies to and a shared
+`signal-cli receive` -> LLM_MODEL screens each message first, both incoming ones and the ones the
+owner sends from their phone (sync messages, sender "me"): keep it only if it has enough content to
+talk about, and never if it holds credentials, codes or account numbers (a digit backstop runs after
+it). A kept message is stored as written in Firestore `context_entries` (source="signal", doc id from
+the Signal timestamp) with its sender, recipient, chat, date, the message it replies to and a shared
 link's preview. An edit updates the stored copy; a sender's delete-for-everyone deletes it.
 A Firestore TTL policy deletes every entry 30 days after `createdAt` (scripts/setup_infra.sh).
 Uses the VM's attached SA (convo-live-signal: datastore.user + aiplatform.user).
@@ -34,9 +35,9 @@ LLM_URL = (f"https://aiplatform.googleapis.com/v1/projects/{PROJECT}"
 db = firestore.Client(project=PROJECT)
 
 SCREEN_SYS = (
-    "You screen one Signal message that someone sent the user. A language-learning app turns each "
-    "message you keep into a conversation prompt, such as asking the user about what the sender said, "
-    "so keep only messages with enough content to talk about.\n"
+    "You screen one Signal message: one that someone sent the user, or one the user sent (sender \"me\"). "
+    "A language-learning app turns each message you keep into a conversation prompt, such as asking the "
+    "user about what was said, so keep only messages with enough content to talk about.\n"
     "Keep it when a friend could ask a specific follow-up question about it: news about the sender or "
     "someone they know, a plan or an event, a trip, an opinion, a story, a question with real substance, "
     "or a shared link whose title or description says what it's about.\n"
@@ -47,12 +48,13 @@ SCREEN_SYS = (
     "holds a password, passcode, PIN, 2FA or one-time code, credential or API key; a financial account, "
     "card, routing or CVV number; an SSN, national ID, passport or driver's license number; or a full "
     "home address.\n"
-    "Input fields: sender (who sent it), chat (the group's name; null for a direct message), text (the "
-    "message), replyTo (the message it answers; author \"me\" is the user), link (a shared link's "
-    "preview). \"@me\" in a text is the user.\n"
+    "Input fields: sender (who sent it; \"me\" is the user), to (who got a direct message the user "
+    "sent), chat (the group's name, \"Note to Self\", or null for a direct message), text (the message), "
+    "replyTo (the message it answers; author \"me\" is the user), link (a shared link's preview). "
+    "\"@me\" in a text is the user.\n"
     'Return only a JSON object: {"keep": true or false, "sensitive": true or false, "reason": "why, in '
     '12 words or fewer", "summary": "if kept, one English sentence of 20 words or fewer naming who said '
-    'or did what; otherwise empty"}')
+    'or did what, calling the user \'the user\'; otherwise empty"}')
 
 
 def _token():
@@ -148,12 +150,23 @@ def _render_mentions(text, mentions, names):
     return u.decode("utf-16-le")
 
 
-def _item(env, dm, names):
-    """The message as the app stores it, or None when it has no text (reactions, stickers, photos)."""
+def _item(env, dm, names, sent=None):
+    """The message as the app stores it, or None when it has no text (reactions, stickers, photos).
+    `sent` is the sync record of a message the owner sent from their phone; it names the recipient."""
     text = _render_mentions(dm.get("message"), dm.get("mentions"), names)
     if not text or not text.strip():
         return None
     group = dm.get("groupInfo")
+    chat = (group.get("groupName") or "a group chat") if group else None  # None = direct message
+    if sent is not None:
+        sender, to = "me", None
+        if not group:
+            to = _who(names, sent.get("destinationUuid"), sent.get("destinationNumber"))
+            if to == "me":
+                chat, to = "Note to Self", None
+    else:
+        sender = env.get("sourceName") or _who(names, env.get("sourceUuid"), env.get("sourceNumber"))
+        to = None
     q = dm.get("quote") or {}
     reply = None
     if q.get("text"):
@@ -162,11 +175,7 @@ def _item(env, dm, names):
     pv = (dm.get("previews") or [{}])[0] or {}
     link = ({"url": pv.get("url"), "title": pv.get("title"), "description": pv.get("description")}
             if pv.get("url") else None)
-    return {"sender": env.get("sourceName") or _who(names, env.get("sourceUuid"), env.get("sourceNumber")),
-            "chat": (group.get("groupName") or "a group chat") if group else None,  # None = direct message
-            "text": text,
-            "replyTo": reply,
-            "link": link}
+    return {"sender": sender, "to": to, "chat": chat, "text": text, "replyTo": reply, "link": link}
 
 
 def _ref(ts):
@@ -188,7 +197,7 @@ def store(ts, item, verdict):
             return "deleted"
         return "dropped"
     fields = {"text": verdict.get("summary") or item["text"], "quote": item["text"],
-              "sender": item["sender"], "chat": item["chat"], "replyTo": item["replyTo"],
+              "sender": item["sender"], "to": item["to"], "chat": item["chat"], "replyTo": item["replyTo"],
               "link": item["link"],
               "sentAt": datetime.datetime.fromtimestamp(int(ts) / 1000, tz=datetime.timezone.utc)}
     if exists:
@@ -214,8 +223,11 @@ def main():
             env = json.loads(line).get("envelope", {})
         except ValueError:
             continue
-        dm, ts = env.get("dataMessage"), env.get("timestamp")
-        edit = env.get("editMessage")
+        sent = (env.get("syncMessage") or {}).get("sentMessage")
+        if sent:  # sent from the owner's phone: the data message's fields sit on `sent` itself
+            dm, ts, edit = sent, sent.get("timestamp"), sent.get("editMessage")
+        else:
+            dm, ts, edit = env.get("dataMessage"), env.get("timestamp"), env.get("editMessage")
         if edit:  # an edit replaces the stored copy of the original message
             dm, ts = edit.get("dataMessage"), edit.get("targetSentTimestamp")
         if not dm or not ts:
@@ -228,7 +240,7 @@ def main():
                 counts["deleted"] += 1
                 print(json.dumps({"ref": gone, "action": "deleted", "why": "sender deleted it"}))
             continue
-        item = _item(env, dm, names)
+        item = _item(env, dm, names, sent)
         if not item:
             continue
         try:

@@ -209,7 +209,9 @@ function AssistantBubble({
 function ContextSource({ entry }: { entry: ContextEntry }) {
   if (!entry.quote) return <span className="context-text">{entry.text}</span>
   const when = entry.sentAt?.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  const meta = [entry.sender, entry.chat ?? 'Direct message', when].filter(Boolean).join(' · ')
+  const mine = entry.sender === 'me'
+  const where = entry.chat ?? (mine && entry.to ? `to ${entry.to}` : 'Direct message')
+  const meta = [mine ? 'You' : entry.sender, where, when].filter(Boolean).join(' · ')
   return (
     <>
       <span className="context-meta">{meta}</span>

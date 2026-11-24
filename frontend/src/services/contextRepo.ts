@@ -26,8 +26,9 @@ export interface ContextEntry {
   source: string
   // Signal entries saved since 2026-11-23 also carry the message itself:
   quote?: string // the message as written
-  sender?: string
-  chat?: string | null // the group's name; null = a direct message
+  sender?: string // "me" = the learner, for a message they sent from their phone
+  to?: string | null // who got a direct message the learner sent
+  chat?: string | null // the group's name or "Note to Self"; null = a direct message
   sentAt?: Date
   replyTo?: { author: string; text: string } | null // author "me" = the learner
   link?: { url: string; title?: string | null; description?: string | null } | null
@@ -54,6 +55,7 @@ function toEntry(id: string, data: DocumentData): ContextEntry {
       ? {
           quote: data.quote,
           sender: String(data.sender ?? ''),
+          to: data.to ?? null,
           chat: data.chat ?? null,
           sentAt,
           replyTo: data.replyTo ?? null,
@@ -94,6 +96,7 @@ export function quoteFor(entry: ContextEntry): ContextQuote | null {
   if (!entry.quote) return null
   return {
     sender: entry.sender || 'someone',
+    to: entry.to ?? null,
     chat: entry.chat ?? null,
     text: entry.quote,
     sentDate: entry.sentAt ? localDate(entry.sentAt) : null,
