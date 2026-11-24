@@ -15,12 +15,15 @@ echo "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.n
 apt-get update
 apt-get install -y temurin-25-jre
 
-# signal-cli (latest release, Java build)
-VER=$(curl -sL https://api.github.com/repos/AsamK/signal-cli/releases/latest | jq -r .tag_name | sed 's/^v//')
+# signal-cli, pinned. This script runs at every boot as root on the box that holds the Signal keys, so
+# a reboot must never pull an unreviewed release. Bump VER by hand after reading the release notes.
+VER=0.14.6
 echo "signal-cli version: $VER"
-cd /opt
-curl -fsSL -o signal-cli.tar.gz "https://github.com/AsamK/signal-cli/releases/download/v${VER}/signal-cli-${VER}.tar.gz"
-tar xf signal-cli.tar.gz
+if [ ! -x "/opt/signal-cli-${VER}/bin/signal-cli" ]; then
+  cd /opt
+  curl -fsSL -o signal-cli.tar.gz "https://github.com/AsamK/signal-cli/releases/download/v${VER}/signal-cli-${VER}.tar.gz"
+  tar xf signal-cli.tar.gz
+fi
 ln -sf "/opt/signal-cli-${VER}/bin/signal-cli" /usr/local/bin/signal-cli
 
 # The ingest log holds the messages it read, so it keeps 30 days, like the Firestore entries.
@@ -33,12 +36,13 @@ cat > /etc/logrotate.d/signal-ingest <<'ROT'
     notifempty
     compress
     delaycompress
-    copytruncate
+    create 0600 root root
 }
 ROT
+chmod 600 /var/log/signal-ingest.log 2>/dev/null || true
 
 # python venv for the ingestion script
-python3 -m venv /opt/venv
+[ -x /opt/venv/bin/python ] || python3 -m venv /opt/venv
 /opt/venv/bin/pip install -q --upgrade pip
 /opt/venv/bin/pip install -q google-cloud-firestore requests google-auth
 
