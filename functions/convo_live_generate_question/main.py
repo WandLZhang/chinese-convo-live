@@ -158,9 +158,13 @@ def build_prompt(word, alt, language, personal_context, conversation_context, qu
             tie = "就算要拗個彎都要扣返呢條訊息同啱啱傾嘅嘢（陳述句或問句都得）。" + (
                 "呢條訊息係我自己發嘅。" if mine else
                 f"訊息係{sender}講嘅，提起嗰陣要講清楚係邊個講、邊個做，唔好將人哋嘅事當咗係我嘅。")
+        elif personal_context:  # a one-line summary from an older entry; it may be someone else's news
+            facts = f"我最近知道嘅一件事（未必係我自己嘅事）：\n{personal_context}\n"
+            tie = ("就算要拗個彎都要扣返呢件事同啱啱傾嘅嘢（陳述句或問句都得）。"
+                   "講到呢件事要講清楚係邊個嘅事，唔好將人哋嘅事當咗係我嘅。")
         else:
-            facts = f"我嘅近況：\n{personal_context}\n" if personal_context else ""
-            tie = "就算要拗個彎都要扣返我嘅近況同啱啱傾嘅嘢（陳述句或問句都得）。"
+            facts = ""
+            tie = "就算要拗個彎都要扣返啱啱傾嘅嘢（陳述句或問句都得）。"
         prompt = (f"你幫緊我練廣東話。{recent}{facts}"
                   f"寫一句你想問我或者同我講嘅、自然又地道嘅口語廣東話，句入面一定要用到「{target}」{alt_note}，"
                   f"{tie}淨係輸出嗰句，用繁體字，唔要jyutping、翻譯或者解釋。")
@@ -172,9 +176,13 @@ def build_prompt(word, alt, language, personal_context, conversation_context, qu
             tie = "就算要绕个弯也要扣上这条消息和刚聊的内容（陈述句或问句都行）。" + (
                 "这条消息是我自己发的。" if mine else
                 f"消息是{sender}发的，提到的时候要说清楚是谁说的、谁做的，别把别人的事安到我头上。")
+        elif personal_context:  # a one-line summary from an older entry; it may be someone else's news
+            facts = f"我最近知道的一件事（不一定是我自己的事）：\n{personal_context}\n"
+            tie = ("就算要绕个弯也要扣上这件事和刚聊的内容（陈述句或问句都行）。"
+                   "提到这件事要说清楚是谁的事，别把别人的事安到我头上。")
         else:
-            facts = f"我的近况：\n{personal_context}\n" if personal_context else ""
-            tie = "就算要绕个弯也要扣上我的近况和刚聊的内容（陈述句或问句都行）。"
+            facts = ""
+            tie = "就算要绕个弯也要扣上刚聊的内容（陈述句或问句都行）。"
         prompt = (f"你在帮我练普通话。{recent}{facts}"
                   f"写一句你想问我或者跟我说的、自然又地道的口语普通话，句子里一定要用到「{word}」，"
                   f"{tie}只输出那一句，不要拼音、翻译或者解释。")
