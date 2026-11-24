@@ -5,7 +5,8 @@ Signal ingestion (runs on the convo-live-signal VM, hourly via cron).
 `signal-cli receive` -> LLM_MODEL screens each message first, both incoming ones and the ones the
 owner sends from their phone (sync messages, sender "me"): keep it only if it has enough content to
 talk about, and never if it holds credentials, codes or account numbers (a digit backstop runs after
-it). A kept message is stored as written in Firestore `context_entries` (source="signal", doc id from
+it) or anything personally sensitive: health, intimate life, family conflict, money, legal trouble,
+grief, or something said in confidence. A kept message is stored as written in Firestore `context_entries` (source="signal", doc id from
 the Signal timestamp) with its sender, recipient, chat, date, the message it replies to and a shared
 link's preview. An edit updates the stored copy; a sender's delete-for-everyone deletes it.
 A Firestore TTL policy deletes every entry 30 days after `createdAt` (scripts/setup_infra.sh).
@@ -44,15 +45,26 @@ SCREEN_SYS = (
     "Drop it when it's a greeting, thanks or congratulations with no detail; an acknowledgment such as "
     "ok, lol, yes or an emoji; logistics with no story, such as on my way or call me; a bare link with "
     "no title; or a fragment you can't follow without more of the chat.\n"
-    "Always drop it, and set sensitive to true, when the message, the message it replies to or the link "
-    "holds a password, passcode, PIN, 2FA or one-time code, credential or API key; a financial account, "
-    "card, routing or CVV number; an SSN, national ID, passport or driver's license number; or a full "
-    "home address.\n"
+    "Always drop it, set sensitive to true and name the kind, when the message, the message it replies "
+    "to or the link holds any of these:\n"
+    "- credential: a password, passcode, PIN, 2FA or one-time code, credential or API key; a financial "
+    "account, card, routing or CVV number; an SSN, national ID, passport or driver's license number; or "
+    "a full home address.\n"
+    "- health: anyone's illness, injury, diagnosis, test result, medication, therapy, mental health, "
+    "pregnancy or fertility.\n"
+    "- intimate: sex, dating or an intimate relationship.\n"
+    "- conflict: trouble in a marriage or a family, or a child's troubles at school.\n"
+    "- money: money trouble or debt, or what the user or someone they know earns or owes.\n"
+    "- legal: legal trouble, the police, a lawsuit or immigration status.\n"
+    "- grief: a death, a funeral or someone's grief.\n"
+    "- confidential: anything said in confidence, or work matters that aren't public.\n"
+    "Everyday news, plans, trips, opinions, jokes and stories stay eligible.\n"
     "Input fields: sender (who sent it; \"me\" is the user), to (who got a direct message the user "
     "sent), chat (the group's name, \"Note to Self\", or null for a direct message), text (the message), "
     "replyTo (the message it answers; author \"me\" is the user), link (a shared link's preview). "
     "\"@me\" in a text is the user.\n"
-    'Return only a JSON object: {"keep": true or false, "sensitive": true or false, "reason": "why, in '
+    'Return only a JSON object: {"keep": true or false, "sensitive": true or false, "kind": "the sensitive '
+    'kind above, or empty", "reason": "why, in '
     '12 words or fewer", "summary": "if kept, one English sentence of 20 words or fewer naming who said '
     'or did what, calling the user \'the user\'; otherwise empty"}')
 
@@ -248,8 +260,10 @@ def main():
             action = store(ts, item, verdict)
             counts[action] += 1
             if verdict.get("sensitive") is True or verdict.get("backstop"):
-                # Never write a code or account number to the log, not even inside the model's reason.
+                # Never write a sensitive message to the log, not even inside the model's reason; the kind
+                # (health, money, ...) is enough to check the screen.
                 print(json.dumps({"ref": ts, "action": action, "sensitive": verdict.get("sensitive") is True,
+                                  "kind": str(verdict.get("kind") or "")[:20],
                                   "backstop": bool(verdict.get("backstop"))}))
             else:
                 print(json.dumps({"ref": ts, "item": item, "verdict": verdict, "action": action},

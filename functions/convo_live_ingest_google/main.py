@@ -67,7 +67,11 @@ def distill(raw, source):
             "the user (<=20 words, English) usable to open a friendly chat. "
             "HARD RULE — NEVER include: passwords, passcodes, PINs, 2FA/OTP/security codes, credentials, "
             "API keys; financial account/card/routing/CVV numbers; SSN/national-ID/passport/license "
-            "numbers; full home address. If the item is entirely sensitive or has no conversational "
+            "numbers; full home address. Output NOTHING for an item about anyone's health (illness, "
+            "injury, diagnosis, test results, medication, therapy, mental health, pregnancy), sex or an "
+            "intimate relationship, trouble in a marriage or family, money trouble, debt or earnings, legal "
+            "trouble or immigration status, a death or grief, or anything confidential, including work "
+            "matters that aren't public. If the item is entirely sensitive or has no conversational "
             "value, output NOTHING. Output ONLY the fact, no preamble, no quotes.")
     r = requests.post(LLM_URL, timeout=60,
         headers={"Authorization": f"Bearer {_llm_token()}", "Content-Type": "application/json"},
