@@ -54,13 +54,16 @@ SCREEN_SYS = (
     "account, card, routing or CVV number; an SSN, national ID, passport or driver's license number; or "
     "a full home address.\n"
     "- health: anyone's illness, injury, diagnosis, test result, medication, therapy, mental health, "
-    "pregnancy or fertility.\n"
+    "disability, pregnancy or fertility, including a message that implies one, such as a support group, "
+    "clinic, therapist or program someone belongs to.\n"
     "- intimate: sex, dating or an intimate relationship.\n"
     "- conflict: trouble in a marriage or a family, or a child's troubles at school.\n"
     "- money: money trouble or debt, or what the user or someone they know earns or owes.\n"
     "- legal: legal trouble, the police, a lawsuit or immigration status.\n"
     "- grief: a death, a funeral or someone's grief.\n"
-    "- confidential: anything said in confidence, or work matters that aren't public.\n"
+    "- confidential: anything said in confidence; work matters that aren't public; a job search, "
+    "application, interview or offer of the user or someone they know (news about jobs in general is "
+    "fine).\n"
     "Everyday news, plans, trips, opinions, jokes and stories stay eligible.\n"
     "Input fields: source (the app), sender (who sent it; \"me\" is the user), to (who got a direct "
     "message the user sent), chat (the group's name, \"Note to Self\", or null for a direct message), "
@@ -121,7 +124,7 @@ def _scannable(item):
     parts = [item["text"], (item["replyTo"] or {}).get("text") or "",
              (item["link"] or {}).get("title") or "", (item["link"] or {}).get("description") or ""]
     words = " ".join(parts).split()
-    return " ".join(w for w in words if not w.startswith(("http://", "https://")))
+    return " ".join(w for w in words if "://" not in w)  # a link can sit inside "(...)" or "<...>"
 
 
 def _accounts():
