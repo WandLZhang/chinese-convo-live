@@ -94,6 +94,8 @@ function Chat() {
         onUpdateReviewTime={(id, vocabId, iso) =>
           void convo.updateReviewTimeForTurn(id, vocabId, iso)
         }
+        canGrade={canAnswer}
+        onGrade={(g) => void convo.gradeCurrent(g)}
       />
 
       <ChatInput

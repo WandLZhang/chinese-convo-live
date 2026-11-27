@@ -6,6 +6,8 @@ import CritiquePanel from './CritiquePanel'
 import TappableText from './TappableText'
 import { translateSentence } from '../services/translate'
 import { tapHitsWord } from '../services/dict'
+import { GRADES, GRADE_NAMES, type Grade } from '../services/scheduler'
+import { buttonLabel } from '../services/srs'
 import type { ContextEntry } from '../services/contextRepo'
 
 interface Props {
@@ -15,6 +17,8 @@ interface Props {
   onMaster: () => void
   onDifficulty: () => void
   onUpdateReviewTime: (userTurnId: string, vocabId: string, iso: string) => void
+  canGrade: boolean // the newest sentence is loaded and nothing is in flight
+  onGrade: (grade: Grade) => void
 }
 
 export default function ConversationView({
@@ -24,6 +28,8 @@ export default function ConversationView({
   onMaster,
   onDifficulty,
   onUpdateReviewTime,
+  canGrade,
+  onGrade,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -69,6 +75,9 @@ export default function ConversationView({
               // Only the current question can raise the struggle face; an old bubble's word isn't
               // the one being graded.
               onDifficulty={i === lastAssistantIdx ? onDifficulty : undefined}
+              // The Anki buttons sit under the newest sentence until it gets a reply or a grade.
+              showGrades={i === turns.length - 1}
+              onGrade={canGrade ? onGrade : undefined}
             />
           )
         }
@@ -100,10 +109,14 @@ function AssistantBubble({
   turn,
   language,
   onDifficulty,
+  showGrades,
+  onGrade,
 }: {
   turn: AssistantTurn
   language: Language
   onDifficulty?: () => void
+  showGrades?: boolean
+  onGrade?: (grade: Grade) => void
 }) {
   const q = turn.question
   const [showTranslation, setShowTranslation] = useState(false)
@@ -201,6 +214,43 @@ function AssistantBubble({
           <span className="skeleton-text line-2" />
         </div>
       )}
+      {q && showGrades && <GradeBar grades={turn.grades} onGrade={onGrade} />}
+    </div>
+  )
+}
+
+const GRADE_ICONS: Record<Grade, string> = { again: 'replay', hard: 'hourglass_top', good: 'check', easy: 'bolt' }
+
+/** Anki's four answer buttons, each with the interval it would give, as AnkiDroid shows them. A tap grades the
+ *  word with that button and moves on. */
+function GradeBar({
+  grades,
+  onGrade,
+}: {
+  grades?: Partial<Record<Grade, Date>>
+  onGrade?: (grade: Grade) => void
+}) {
+  const now = new Date()
+  return (
+    <div className="grade-bar" role="group" aria-label="Grade this word like Anki">
+      {GRADES.map((g) => {
+        const due = grades?.[g]
+        const label = due ? buttonLabel(due, now) : '…'
+        return (
+          <button
+            key={g}
+            type="button"
+            className={`grade-btn ${g}`}
+            disabled={!onGrade}
+            onClick={() => onGrade?.(g)}
+            title={`${GRADE_NAMES[g]} · ${label}`}
+            aria-label={`${GRADE_NAMES[g]}, ${label}`}
+          >
+            <span className="material-symbols-outlined">{GRADE_ICONS[g]}</span>
+            <span className="grade-ivl">{label}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }

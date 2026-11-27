@@ -12,10 +12,15 @@ import {
 } from '../services/contextRepo'
 import {
   evaluateAnswer,
+  gradeWord,
   markWordMastered,
+  previewGrades,
   updateReviewTime,
+  GRADE_NAMES,
   type AnswerEvaluation,
+  type Grade,
 } from '../services/scheduler'
+import { relativeDue } from '../services/srs'
 
 export interface AssistantTurn {
   id: string
@@ -24,6 +29,7 @@ export interface AssistantTurn {
   question: QuestionData | null // null while generating (renders a shimmer)
   isOpener: boolean
   sourceContext?: ContextEntry // the message or fact this sentence was built from (paperclip reveal)
+  grades?: Partial<Record<Grade, Date>> // when each Anki button would bring the word back (button labels)
 }
 export interface UserTurn {
   id: string
@@ -165,13 +171,22 @@ export function useConversation({ language }: UseConversationArgs) {
         ...prev,
         { id: turnId, role: 'assistant', vocab, question: null, isOpener },
       ])
+      // The Anki buttons' interval labels load while the sentence streams.
+      previewGrades(vocab.id, language)
+        .then((options) => {
+          const grades = Object.fromEntries(
+            Object.entries(options).map(([g, t]) => [g, new Timestamp(t.seconds, t.nanoseconds).toDate()]),
+          ) as Partial<Record<Grade, Date>>
+          patchTurn(turnId, { grades } as Partial<AssistantTurn>)
+        })
+        .catch((err) => console.warn('[conversation] grade preview failed:', err))
       try {
         await attachQuestion(turnId, vocab, isOpener)
       } finally {
         setBusy(false)
       }
     },
-    [attachQuestion],
+    [attachQuestion, language, patchTurn],
   )
 
   const pushNextVocab = useCallback(
@@ -270,6 +285,33 @@ export function useConversation({ language }: UseConversationArgs) {
     await pushNextVocab(false)
   }, [language, pushNextVocab])
 
+  /** Grade the current word with one Anki button, note when it comes back, and move on, as Anki does. */
+  const gradeCurrent = useCallback(
+    async (grade: Grade) => {
+      const vocab = currentVocabRef.current
+      if (!vocab) return
+      setBusy(true)
+      try {
+        const res = await gradeWord(vocab.id, language, grade)
+        const due = new Timestamp(res.nextReview.seconds, res.nextReview.nanoseconds).toDate()
+        setTurns((prev) => [
+          ...prev,
+          { id: uid(), role: 'system', text: `${GRADE_NAMES[grade]} · next review ${relativeDue(due, new Date())}` },
+        ])
+      } catch (err) {
+        console.error('[conversation] grade failed:', err)
+        setTurns((prev) => [
+          ...prev,
+          { id: uid(), role: 'system', text: '⚠️ Grading failed. Tap the button again.' },
+        ])
+        setBusy(false)
+        return
+      }
+      await pushNextVocab(false)
+    },
+    [language, pushNextVocab],
+  )
+
   /** Load a random word from the whole collection (the old app's shuffle). */
   const shuffle = useCallback(async () => {
     setBusy(true)
@@ -322,6 +364,7 @@ export function useConversation({ language }: UseConversationArgs) {
     submitAnswer,
     next,
     masterCurrent,
+    gradeCurrent,
     shuffle,
     practiceWord,
     updateReviewTimeForTurn,

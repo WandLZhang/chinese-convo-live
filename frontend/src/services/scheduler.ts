@@ -5,6 +5,11 @@ const EVALUATE_URL = `${functionBase}/convo_live_evaluate_answer`
 const UPDATE_TIME_URL = `${functionBase}/convo_live_update_review_time`
 const MARK_MASTERED_URL = `${functionBase}/convo_live_mark_word_mastered`
 
+/** Anki's four answer buttons. */
+export type Grade = 'again' | 'hard' | 'good' | 'easy'
+export const GRADES: Grade[] = ['again', 'hard', 'good', 'easy']
+export const GRADE_NAMES: Record<Grade, string> = { again: 'Again', hard: 'Hard', good: 'Good', easy: 'Easy' }
+
 export interface AnswerEvaluation {
   fluent: boolean
   meaningful_usage: boolean
@@ -20,7 +25,7 @@ export interface FsTimestampData {
 export interface EvaluationResult {
   success?: boolean
   evaluation: AnswerEvaluation
-  grade?: 'again' | 'hard' | 'good' | 'easy' // the Anki button the reply mapped to
+  grade?: Grade // the Anki button the reply mapped to
   nextReview: FsTimestampData
 }
 
@@ -59,6 +64,49 @@ export async function evaluateAnswer(
   }
   const data = (await response.json()) as EvaluationResult
   console.log('[evaluateAnswer] response:', data)
+  return data
+}
+
+/** The due time each Anki button would give the word now, for the labels under the sentence. Writes nothing. */
+export async function previewGrades(
+  docId: string,
+  language: Language,
+): Promise<Record<Grade, FsTimestampData>> {
+  const body = { docId, language, preview: true }
+  console.log('[previewGrades] request payload:', body)
+  const response = await fetch(EVALUATE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error(`Failed to preview grades: ${err.error || response.statusText}`)
+  }
+  const data = (await response.json()) as { options: Record<Grade, FsTimestampData> }
+  console.log('[previewGrades] response:', data)
+  return data.options
+}
+
+/** Grade the word with one Anki button: scheduled the way Anki would, with no reply to grade. */
+export async function gradeWord(
+  docId: string,
+  language: Language,
+  grade: Grade,
+): Promise<{ grade: Grade; nextReview: FsTimestampData }> {
+  const body = { docId, language, grade }
+  console.log('[gradeWord] request payload:', body)
+  const response = await fetch(EVALUATE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error(`Failed to grade the word: ${err.error || response.statusText}`)
+  }
+  const data = (await response.json()) as { grade: Grade; nextReview: FsTimestampData }
+  console.log('[gradeWord] response:', data)
   return data
 }
 

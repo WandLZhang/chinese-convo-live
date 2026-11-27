@@ -100,6 +100,15 @@ Return ONLY a JSON object with these fields:
         print(f"Error: {str(e)}")
         raise
 
+BUTTONS = (srs.AGAIN, srs.HARD, srs.GOOD, srs.EASY)
+
+
+def _ts(dt: datetime) -> dict:
+    t = Timestamp()
+    t.FromDatetime(dt)
+    return {'seconds': t.seconds, 'nanoseconds': t.nanos}
+
+
 def current_card(raw: dict, language: str) -> dict:
     """The word's SRS card for this language: stored, legacy (scheduled by the old fixed-interval
     code, so a due time but no card), or new."""
@@ -150,6 +159,27 @@ def evaluate_answer(request):
         srs_field = f'srs{language.capitalize()}'
         due_before = raw.get(next_review_field)  # aware UTC datetime, or None
         card = current_card(raw, language)
+
+        # The Anki buttons under the sentence. `preview` returns the due time each of the four would
+        # give the word now, for the labels; `grade` applies one, the same way an LLM-graded reply is
+        # scheduled, with no reply to grade. They live here because this function stays warm.
+        button = request_json.get('grade')
+        if request_json.get('preview') or button is not None:
+            now = datetime.now(timezone.utc)
+            if request_json.get('preview'):
+                options = {g: _ts(srs.schedule(card, g, now, due_before)[1]) for g in BUTTONS}
+                print(json.dumps({'preview': options, 'card': card, 'due_before': due_before},
+                                 default=str, ensure_ascii=False))
+                return (jsonify({'success': True, 'options': options}), 200, headers)
+            if button not in BUTTONS:
+                return (jsonify({'error': f'grade must be one of {", ".join(BUTTONS)}'}), 400, headers)
+            new_card, next_review = srs.schedule(card, button, now, due_before)
+            print("\n=== Scheduling (button) ===")
+            print(json.dumps({'grade': button, 'due_before': due_before, 'card_before': card,
+                              'card_after': new_card, 'next_review': next_review},
+                             indent=2, default=str, ensure_ascii=False))
+            doc_ref.update({next_review_field: next_review, srs_field: new_card})
+            return (jsonify({'success': True, 'grade': button, 'nextReview': _ts(next_review)}), 200, headers)
 
         vocab_data = dict(raw)
         # Convert Firestore timestamps to ISO format strings

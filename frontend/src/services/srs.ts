@@ -172,6 +172,22 @@ function ankiDay(t: Date): number {
   )
 }
 
+/**
+ * An answer button's interval, the way Anki prints it: "<1m" and "<10m" inside the learn-ahead limit, then "45m",
+ * "1d", "4d", "1.3mo", "2.1y". Days count by the 4 AM day, as review cards fall due.
+ */
+export function buttonLabel(due: Date, now: Date): string {
+  const min = (due.getTime() - now.getTime()) / 60000
+  if (min < 60) {
+    const m = Math.max(1, Math.round(min))
+    return m <= LEARN_AHEAD_MIN ? `<${m}m` : `${m}m`
+  }
+  const days = Math.max(1, ankiDay(due) - ankiDay(now))
+  if (days < 30) return `${days}d`
+  if (days < 365) return `${(days / 30).toFixed(1)}mo`
+  return `${(days / 365).toFixed(1)}y`
+}
+
 /** How far off a due time is, the way Anki labels it: "in 10 min", "in 5 h", "in 3 days". */
 export function relativeDue(due: Date, now: Date): string {
   const min = Math.ceil((due.getTime() - now.getTime()) / 60000)

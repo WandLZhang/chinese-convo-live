@@ -16,6 +16,7 @@ import {
   splitByDay,
   ankiDayStart,
   nextAnkiDayStart,
+  buttonLabel,
 } from './srs'
 
 const ts = (d: Date) => ({ toDate: () => d })
@@ -219,5 +220,29 @@ describe('splitByDay (word list: Incoming today, Scheduled later)', () => {
   it('starts the day at 4 AM: 2 AM still belongs to the previous day', () => {
     expect(ankiDayStart(new Date(2026, 10, 10, 2))).toEqual(new Date(2026, 10, 9, 4))
     expect(nextAnkiDayStart(new Date(2026, 10, 9, 19))).toEqual(new Date(2026, 10, 10, 4))
+  })
+})
+
+describe('buttonLabel (the interval under each Anki button)', () => {
+  const now = new Date(2026, 10, 26, 19, 0) // Thu Nov 26, 7 PM local
+
+  it('labels a new word the way Anki does: <1m, <6m, <10m, 4d', () => {
+    expect(buttonLabel(new Date(now.getTime() + 60000), now)).toBe('<1m')
+    expect(buttonLabel(new Date(now.getTime() + 5.5 * 60000), now)).toBe('<6m')
+    expect(buttonLabel(new Date(now.getTime() + 10 * 60000), now)).toBe('<10m')
+    expect(buttonLabel(new Date(2026, 10, 30, 4, 0), now)).toBe('4d')
+  })
+
+  it('drops the < past the 20-minute learn-ahead limit', () => {
+    expect(buttonLabel(new Date(now.getTime() + 45 * 60000), now)).toBe('45m')
+  })
+
+  it('counts days by the 4 AM day, so tomorrow 4 AM from 7 PM is 1d', () => {
+    expect(buttonLabel(new Date(2026, 10, 27, 4, 0), now)).toBe('1d')
+  })
+
+  it('switches to months and years for long intervals', () => {
+    expect(buttonLabel(new Date(2027, 0, 5, 4, 0), now)).toBe('1.3mo')
+    expect(buttonLabel(new Date(2029, 1, 3, 4, 0), now)).toBe('2.2y')
   })
 })
