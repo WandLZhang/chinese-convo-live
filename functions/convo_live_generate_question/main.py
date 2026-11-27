@@ -55,6 +55,14 @@ CORS = {"Access-Control-Allow-Origin": "*"}
 STREAM_HEADERS = {**CORS, "X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 LANG = {"cantonese": "廣東話", "mandarin": "普通話"}
 converter = opencc.OpenCC("s2t")  # simplified -> traditional (Cantonese output must be traditional)
+_t2s = opencc.OpenCC("t2s")
+# Sent before a rewritten sentence when the streamed one left out the word; the client shows what follows it.
+RETRY_MARK = "\u001e"
+
+
+def has_target(text, target):
+    """True when the target word appears, in either script (the word and the output can differ)."""
+    return bool(target) and (target in text or _t2s.convert(target) in _t2s.convert(text))
 
 
 def _month_day(iso_date):
@@ -196,6 +204,18 @@ def _claude_full(system, nudge, max_tokens):
     return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text").strip()
 
 
+def _claude_rewrite(system, nudge, first, target, language, max_tokens):
+    """One more try when a sentence left out the target word: show the model its sentence, name the word."""
+    ask = (f"頭先嗰句冇用到「{target}」。重新寫過一句，句入面一定要原樣出現「{target}」，其他要求照舊。淨係輸出嗰句。"
+           if language == "cantonese" else
+           f"刚才那句没有用到「{target}」。重新写一句，句子里一定要原样出现「{target}」，其他要求不变。只输出那一句。")
+    msg = _client.messages.create(model=GEN_MODEL, max_tokens=max_tokens, system=system,
+                                  messages=[{"role": "user", "content": nudge},
+                                            {"role": "assistant", "content": first},
+                                            {"role": "user", "content": ask}])
+    return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text").strip()
+
+
 def _claude_stream(system, nudge, max_tokens):
     """Token stream for the direct path (natural typewriter UX)."""
     with _client.messages.stream(model=GEN_MODEL, max_tokens=max_tokens, system=system,
@@ -248,13 +268,22 @@ def convo_live_generate_question(request):
             return Response(stream_with_context(gen_alt()), mimetype="text/plain; charset=utf-8",
                             headers=STREAM_HEADERS)
 
-        # DIRECT path: real token streaming.
+        # DIRECT path: real token streaming, then a check that the word made it in. A long quote can pull the
+        # model off the word (1 of 25 sentences, 2026-11-24 to 27); then it rewrites once and the client swaps
+        # the sentence after RETRY_MARK.
         def gen_stream():
             collected = []
             try:
                 for delta in _claude_stream(system, nudge, max_tokens):
                     collected.append(delta)
                     yield delta
+                first = "".join(collected)
+                if not has_target(first, target):
+                    logger.warning(f"target '{target}' missing from the streamed sentence, rewriting: {first}")
+                    fixed = _claude_rewrite(system, nudge, first, target, language, max_tokens)
+                    logger.info(f"REWRITE ({'has' if has_target(fixed, target) else 'STILL MISSING'} '{target}'): {fixed}")
+                    collected = [fixed]
+                    yield RETRY_MARK + fixed
             finally:
                 logger.info(f"FINAL (stream path): {''.join(collected)}")
         return Response(stream_with_context(gen_stream()), mimetype="text/plain; charset=utf-8",

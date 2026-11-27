@@ -1,5 +1,6 @@
 import type { ContextQuote, Language } from '../types'
 import { functionBase } from './firebase'
+import { latestSentence, RETRY_MARK } from './streamText'
 
 const GENERATE_QUESTION_URL = `${functionBase}/convo_live_generate_question`
 // TTS: Cloud TTS Chirp 3 HD (benchmark-selected; ~0.6s, replaced Gemini native-audio).
@@ -83,10 +84,13 @@ export async function generateQuestion(
     const chunk = decoder.decode(value, { stream: true })
     if (chunk) {
       full += chunk
-      onDelta?.(chunk, full)
+      onDelta?.(chunk, latestSentence(full))
     }
   }
-  full = full.trim()
+  if (full.includes(RETRY_MARK)) {
+    console.log('[generateQuestion] the first sentence left out the word; showing the rewrite:', full)
+  }
+  full = latestSentence(full).trim()
 
   // Metadata is derived client-side: the client already knows `alt` from the Firestore doc,
   // so the function no longer returns requires_alternative/target_word.
