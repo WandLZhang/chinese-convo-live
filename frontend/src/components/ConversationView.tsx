@@ -205,6 +205,8 @@ function AssistantBubble({
                 <ContextSource entry={turn.sourceContext} />
               </div>
             )}
+
+            {showGrades && <GradeBar grades={turn.grades} onGrade={onGrade} />}
           </div>
           <TtsButton question={q} language={language} />
         </div>
@@ -214,15 +216,14 @@ function AssistantBubble({
           <span className="skeleton-text line-2" />
         </div>
       )}
-      {q && showGrades && <GradeBar grades={turn.grades} onGrade={onGrade} />}
     </div>
   )
 }
 
 const GRADE_ICONS: Record<Grade, string> = { again: 'replay', hard: 'hourglass_top', good: 'check', easy: 'bolt' }
 
-/** Anki's four answer buttons, each with the interval it would give, as AnkiDroid shows them. A tap grades the
- *  word with that button and moves on. */
+/** Anki's four answer buttons, quiet, at the foot of the sentence's bubble, each with the interval it would give,
+ *  as AnkiDroid shows them. A tap grades the word with that button and moves on. */
 function GradeBar({
   grades,
   onGrade,

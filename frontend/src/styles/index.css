@@ -923,38 +923,37 @@ body {
   font-weight: 600;
 }
 
-/* Anki's answer buttons under the newest sentence: icon, then the interval it would give. */
+/* Anki's answer buttons, quiet, at the foot of the sentence's bubble: a small tinted icon and its interval,
+   no borders. */
 .grade-bar {
   display: flex;
-  gap: 8px;
-  margin: 6px 0 2px 2px;
+  gap: 12px;
+  margin-top: 10px;
+  white-space: nowrap; /* one line: a short sentence's bubble widens to fit the four */
 }
 .grade-btn {
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
-  gap: 1px;
-  min-width: 52px;
-  padding: 4px 10px 3px;
-  border-radius: 12px;
-  border: 1px solid currentColor;
-  background: transparent;
+  gap: 2px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  font: 500 11.5px/1 var(--font-family);
+  color: var(--text-secondary);
+  opacity: 0.8;
   cursor: pointer;
-  font: inherit;
 }
 .grade-btn .material-symbols-outlined {
-  font-size: 20px;
-  line-height: 1;
+  font-size: 15px;
 }
-.grade-btn .grade-ivl {
-  font-size: 11px;
-  line-height: 1.2;
+.grade-btn.again .material-symbols-outlined { color: var(--grade-again); }
+.grade-btn.hard .material-symbols-outlined { color: var(--grade-hard); }
+.grade-btn.good .material-symbols-outlined { color: var(--grade-good); }
+.grade-btn.easy .material-symbols-outlined { color: var(--grade-easy); }
+.grade-btn:active {
+  opacity: 1;
 }
-.grade-btn.again { color: var(--grade-again); }
-.grade-btn.hard { color: var(--grade-hard); }
-.grade-btn.good { color: var(--grade-good); }
-.grade-btn.easy { color: var(--grade-easy); }
 .grade-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: default;
 }
